@@ -62,13 +62,25 @@ body {
 
 /* Page/Backdrop Blending: Dim high-contrast white pages in dark modes for eye-comfort */
 .theme-charcoal img.manga-page-img {
-  filter: brightness(0.9) contrast(1.02);
-  transition: filter 0.3s ease;
+  filter: brightness(0.88) contrast(1.02) sepia(0.05);
+  transition: filter 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .theme-oled img.manga-page-img {
-  filter: brightness(0.82) contrast(1.04);
-  transition: filter 0.3s ease;
+  filter: brightness(0.8) contrast(1.05) sepia(0.1);
+  transition: filter 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Skeleton Loading Animation */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--surface) 25%, var(--border) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
 }
 
 /* Custom Scrollbar for clean UI */
@@ -195,3 +207,15 @@ body {
   font-weight: 900;
   font-style: italic;
 }
+
+/* --- Google Material Symbols Utilities --- */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  display: inline-block;
+  line-height: 1;
+}
+
+.material-symbols-outlined.fill {
+  font-variation-settings: 'FILL' 1;
+}
+

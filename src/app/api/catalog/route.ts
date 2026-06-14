@@ -37,12 +37,27 @@ export async function GET() {
         .map((ch: any) => ({
           id: ch.id,
           title: ch.title,
-          pages: ch.pages
+          pages: ch.pages,
+          created_at: ch.created_at // Needed for "New Updates" logic
         }));
 
-      // Naturally sort chapters if their IDs or titles have numerical values
+      // Naturally sort chapters
       const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
       mangaChapters.sort((a: any, b: any) => collator.compare(a.title, b.title));
+
+      // Get latest chapter date
+      const lastUpdate = mangaChapters.length > 0 
+        ? new Date(Math.max(...mangaChapters.map(c => new Date(c.created_at).getTime()))).toISOString()
+        : m.created_at;
+
+      // Parse views (e.g., "5.5M" -> 5500000) for internal ranking
+      const parseViews = (v: string) => {
+        if (!v) return 0;
+        const clean = v.toUpperCase();
+        if (clean.endsWith('M')) return parseFloat(clean) * 1000000;
+        if (clean.endsWith('K')) return parseFloat(clean) * 1000;
+        return parseFloat(clean) || 0;
+      };
 
       return {
         id: m.id,
@@ -53,6 +68,14 @@ export async function GET() {
         genres: m.genres || [],
         popularity: m.popularity || 0,
         isOriginal: m.is_original,
+        originalTitle: m.original_title || "",
+        artist: m.artist || "",
+        status: m.status || "Ongoing",
+        type: m.manga_type || "Manhwa",
+        year: m.release_year || null,
+        views: m.views_count || "0",
+        numericViews: parseViews(m.views_count), // Used for ranking
+        lastUpdate, // Used for sorting new updates
         chapters: mangaChapters
       };
     });

@@ -1,70 +1,30 @@
-name: Manga Ingestion Worker (GitHub + CDN)
+name: Scheduled Manga Ingestion
 
 on:
-  repository_dispatch:
-    types: [ingest_manga]
+  schedule:
+    - cron: '0 */6 * * *' # Every 6 hours
+  workflow_dispatch: # Allow manual trigger
 
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # Allows pushing to the manga-assets branch
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Fetch all branches
 
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '26.2.0'
+          cache: 'npm'
 
-      - name: Install dependencies
-        run: |
-          npm install @supabase/supabase-js sharp decompress axios
+      - name: Install Dependencies
+        run: npm install
 
-      - name: Run Ingestion Script
-        run: |
-          # Create a separate folder outside the Git workspace to store processed images
-          mkdir -p ../manga-output
-          node scripts/ingest.js
+      - name: Run Scraper
         env:
-          MANGA_ID: ${{ github.event.client_payload.mangaId }}
-          CHAPTER_ID: ${{ github.event.client_payload.chapterId }}
-          CHAPTER_TITLE: ${{ github.event.client_payload.chapterTitle }}
-          ZIP_URL: ${{ github.event.client_payload.zipUrl }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          RUST_BACKTRACE: 1
-
-      - name: Commit and Push WebP Pages to manga-assets branch
-        run: |
-          # Configure Git credentials
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          # Fetch all branches to ensure we can see manga-assets
-          git fetch origin
-          
-          # Check if origin/manga-assets exists
-          BRANCH_EXISTS=$(git branch -r | grep "origin/manga-assets" || true)
-          
-          if [ -n "$BRANCH_EXISTS" ]; then
-            echo "Branch manga-assets exists. Checking it out..."
-            git checkout manga-assets
-            git pull origin manga-assets
-          else
-            echo "Branch manga-assets does not exist. Creating orphan branch..."
-            git checkout --orphan manga-assets
-            git rm -rf .
-          fi
-          
-          # Copy optimized WebP pages from temporary output directory to the workspace root
-          mkdir -p manga
-          cp -r ../manga-output/manga/* ./manga/
-          
-          # Add, commit, and push
-          git add manga/
-          git commit -m "Upload WebP pages for ${MANGA_ID} - ${CHAPTER_ID}"
-          git push origin manga-assets
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: node scripts/scrape-up-manga.js

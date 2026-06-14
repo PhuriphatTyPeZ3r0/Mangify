@@ -20,6 +20,12 @@ export interface Manga {
   genres?: string[];
   popularity?: number;
   isOriginal?: boolean;
+  originalTitle?: string;
+  artist?: string;
+  status?: string;
+  type?: string;
+  year?: number;
+  views?: string;
 }
 
 export interface ReadingProgress {

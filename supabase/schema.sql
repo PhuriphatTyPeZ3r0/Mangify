@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS public.manga (
     genres TEXT[] DEFAULT '{}'::TEXT[] NOT NULL,
     is_original BOOLEAN DEFAULT true NOT NULL,
     popularity INTEGER DEFAULT 0 NOT NULL,
+    original_title TEXT,
+    artist TEXT,
+    status TEXT DEFAULT 'Ongoing'::text,
+    manga_type TEXT DEFAULT 'Manhwa'::text,
+    release_year INTEGER,
+    views_count TEXT DEFAULT '0'::text,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
