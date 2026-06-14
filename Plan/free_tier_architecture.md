@@ -1,6 +1,6 @@
-# 100% Free-Tier Architecture: Mangify
+# 100% Free-Tier Architecture: Mangify (GitHub + CDN Edition)
 
-This updated architecture specifies services and setups that are **completely free** (no cost/no credit card required, or highly generous free tiers) for host deployment, image hosting, database management, and asynchronous background tasks.
+This updated architecture specifies services and setups that are **100% free** (no credit card required, zero costs) for host deployment, image hosting, database management, and asynchronous background tasks.
 
 ---
 
@@ -9,47 +9,40 @@ This updated architecture specifies services and setups that are **completely fr
 | Role | Provider / Service | Free-Tier Limits | Setup Details |
 | :--- | :--- | :--- | :--- |
 | **Frontend & BFF** | **Vercel** | 100 GB Bandwidth/mo, Free SSL, Serverless Functions | Hosts Next.js App Router & Auth.js API handlers. |
-| **Database** | **Supabase** or **Neon.tech** | 500 MB Database storage, 1 GB file storage, unlimited API requests | Relational DB for Users, Manga metadata, Bookmarks, and Chapters. |
-| **Manga Object Storage** | **Cloudflare R2** | **10 GB Storage**, 1M Class A operations/mo, 10M Class B operations/mo, **$0 Egress Fees** | Stores optimized WebP/AVIF manga images. R2 does not charge for egress (bandwidth), making it ideal for free image hosting. |
-| **Caching & Queue** | **Upstash Redis** | **10,000 Commands/day** (Serverless) | Fast session caching and scrolling progress buffers. |
-| **Asynchronous Worker** | **GitHub Actions** | **2,000 free runner minutes/month** (Private repo) or **Unlimited** (Public repo) | A custom workflow runner that processes, unpacks, and optimizes ZIP files, then uploads pages to R2 and writes links to the DB. |
+| **Database** | **Supabase** | 500 MB Database storage, 10,000 active users | Relational DB for Users, Bookmarks, Reading Progress, Manga Catalog, and Chapters. |
+| **Manga Object Storage** | **GitHub Repository (`manga-assets` branch)** | **10 GB Storage limit** | Stored directly in the GitHub repository on a dedicated assets branch. |
+| **Manga CDN Delivery** | **jsDelivr CDN** | **Unlimited bandwidth**, global edge caching | Renders pages via jsDelivr CDN (`https://cdn.jsdelivr.net/gh/...`) for instant loading. |
+| **Asynchronous Worker** | **GitHub Actions** | **2,000 free runner minutes/month** | A custom workflow runner that downloads ZIP files (from temp links) or scrapes URLs, unzips, optimizes to WebP, commits to the assets branch, and updates Supabase. |
 
 ---
 
-## 🔄 Free-Tier Ingestion Workflow (The GitHub Actions Hack)
-
-Since free servers (like Render or Koyeb Free) have RAM limits (512MB) and timeout thresholds, they will crash when trying to extract and optimize large manga ZIP files (e.g. 50MB-100MB). 
-
-By leveraging **GitHub Actions**, we get a high-power VM (2-core CPU, 7GB RAM) completely for free to process the ZIP.
+## 🔄 Free-Tier Ingestion Workflow (The GitHub + CDN Hack)
 
 ```mermaid
 sequenceDiagram
-    participant Admin as Admin Portal (Next.js)
-    participant Vercel as Next.js API (Vercel)
-    participant GH as GitHub Repository Dispatch (Actions)
-    participant R2 as Cloudflare R2
-    participant DB as Supabase PostgreSQL
- 
-    Admin->>Vercel: Upload ZIP file / Send Trigger
-    Vercel->>R2: Upload raw ZIP to "temp/" folder in R2
-    Vercel->>GH: Trigger Workflow via API (Repository Dispatch)
-    Note over GH: GitHub runner starts (7GB RAM, Free CPU)
-    GH->>R2: Download raw ZIP from "temp/"
-    GH->>GH: Unzip, sort, & convert images to WebP (Sharp Node.js)
-    GH->>R2: Upload optimized WebP pages to "manga/{manga_id}/ch1/"
-    GH->>DB: Insert page URL array & update chapter status via SQL / Webhook
-    GH->>R2: Delete raw ZIP from "temp/"
+    participant Admin as Next.js Web Admin
+    participant BFF as Next.js BFF (Vercel)
+    participant GH as GitHub Actions Runner
+    participant Repo as GitHub Repository (manga-assets branch)
+    participant DB as Supabase DB
+
+    Admin->>BFF: Ingest trigger (manga_id, ch_id, ch_title, zip_url)
+    BFF->>GH: Dispatch Workflow (event_type: ingest_manga)
+    Note over GH: GitHub runner starts
+    GH->>GH: Download raw ZIP from zip_url (e.g. transfer.sh / file.io)
+    GH->>GH: Unzip, naturally sort files, & convert to WebP using Sharp
+    GH->>Repo: Commit & Push WebP pages to "manga-assets" branch
+    Note over Repo: Files are now cached and served via jsDelivr CDN
+    GH->>DB: Upsert chapter info & page jsDelivr URL array
 ```
 
 ---
 
 ## 💸 Cost Mitigation Features in Code
 
-1. **Lazy Loading and Client-Side Decompression**:
-   - Enable local ZIP files to be processed client-side (using JSZip) so users who read their own files consume **$0 server resources**.
-2. **On-the-fly Image Resizing (Cloudflare CDN / Free Resizing)**:
-   - Use Cloudflare's free cache edge to store image files.
-3. **Write-Buffering in Upstash**:
-   - Reading progress is updated frequently. Directly hitting Supabase PostgreSQL on every scroll event will exhaust the database connection limits.
-   - The Next.js BFF logs scrolling events to **Upstash Redis** (cheap, fast commands).
-   - A single scheduled Vercel Cron Job runs once every few minutes, fetches the buffered progress from Redis, and performs a single bulk `INSERT ... ON CONFLICT` into Supabase.
+1. **Zero Egress/Storage Fees**:
+   - By using GitHub for storage and jsDelivr for CDN delivery, we get high-speed global image delivery without paying for Cloudflare R2 or AWS egress.
+2. **Serverless Triggering**:
+   - The Next.js BFF does not handle file processing or large uploads, staying safely within Vercel's free serverless limits.
+3. **Throttled DB Sync**:
+   - Reading progress is throttled to once every 10 seconds of active reading and written directly to Supabase to prevent connection limit exhaustion.

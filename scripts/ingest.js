@@ -2,21 +2,18 @@ const fs = require("fs");
 const path = require("path");
 const decompress = require("decompress");
 const sharp = require("sharp");
+const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
-const { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 
 // 1. Validate environment variables
 const requiredEnv = [
   "MANGA_ID",
   "CHAPTER_ID",
   "CHAPTER_TITLE",
-  "ZIP_FILENAME",
-  "R2_ACCESS_KEY_ID",
-  "R2_SECRET_ACCESS_KEY",
-  "R2_BUCKET_NAME",
-  "R2_ENDPOINT",
+  "ZIP_URL",
   "NEXT_PUBLIC_SUPABASE_URL",
-  "SUPABASE_SERVICE_ROLE_KEY"
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "GITHUB_REPOSITORY" // Automatically provided by GitHub Actions (e.g. 'PhuriphatTyPeZ3r0/Mangify')
 ];
 
 const missingEnv = requiredEnv.filter(env => !process.env[env]);
@@ -29,27 +26,13 @@ const {
   MANGA_ID,
   CHAPTER_ID,
   CHAPTER_TITLE,
-  ZIP_FILENAME,
-  R2_ACCESS_KEY_ID,
-  R2_SECRET_ACCESS_KEY,
-  R2_BUCKET_NAME,
-  R2_ENDPOINT,
+  ZIP_URL,
   NEXT_PUBLIC_SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY
+  SUPABASE_SERVICE_ROLE_KEY,
+  GITHUB_REPOSITORY
 } = process.env;
 
-const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || `https://${R2_BUCKET_NAME}.r2.cloudflarestorage.com`;
-
-// Initialize clients
-const s3Client = new S3Client({
-  region: "auto",
-  endpoint: R2_ENDPOINT,
-  credentials: {
-    accessKeyId: R2_ACCESS_KEY_ID,
-    secretAccessKey: R2_SECRET_ACCESS_KEY,
-  },
-});
-
+// Initialize Supabase client
 const supabase = createClient(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: {
     persistSession: false,
@@ -58,28 +41,31 @@ const supabase = createClient(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KE
 });
 
 async function main() {
-  const tempZipPath = path.join(__dirname, "temp-download.zip");
-  const extractedDir = path.join(__dirname, "extracted-manga");
+  // Save files to parent directory (outside of git workspace)
+  const outputRoot = path.join(__dirname, "..", "..", "manga-output");
+  const tempZipPath = path.join(outputRoot, "temp-download.zip");
+  const extractedDir = path.join(outputRoot, "extracted-manga");
+  const mangaOutputDir = path.join(outputRoot, "manga", MANGA_ID, CHAPTER_ID);
 
   try {
     console.log(`🚀 Starting ingestion for Manga: ${MANGA_ID}, Chapter: ${CHAPTER_ID} (${CHAPTER_TITLE})`);
-    console.log(`📦 Downloading raw ZIP from R2: ${ZIP_FILENAME}...`);
+    console.log(`📦 Downloading raw ZIP from URL: ${ZIP_URL}...`);
 
-    // 1. Download ZIP file from Cloudflare R2
-    const getObjResponse = await s3Client.send(
-      new GetObjectCommand({
-        Bucket: R2_BUCKET_NAME,
-        Key: ZIP_FILENAME,
-      })
-    );
+    // Ensure output directories exist
+    fs.mkdirSync(outputRoot, { recursive: true });
+    fs.mkdirSync(mangaOutputDir, { recursive: true });
 
-    // Save streaming body to local file
+    // 1. Download ZIP file
+    const response = await axios({
+      method: "get",
+      url: ZIP_URL,
+      responseType: "stream"
+    });
+
     const writeStream = fs.createWriteStream(tempZipPath);
-    const bodyStream = getObjResponse.Body;
-    
     await new Promise((resolve, reject) => {
-      bodyStream.pipe(writeStream);
-      bodyStream.on("error", reject);
+      response.data.pipe(writeStream);
+      response.data.on("error", reject);
       writeStream.on("finish", resolve);
       writeStream.on("error", reject);
     });
@@ -125,34 +111,26 @@ async function main() {
 
     const pageUrls = [];
 
-    // 5. Convert to WebP and upload each page to R2
+    // 5. Convert to WebP and save to local directory
     for (let i = 0; i < allImages.length; i++) {
       const imgPath = allImages[i];
       const pageNumber = i + 1;
-      const r2Key = `manga/${MANGA_ID}/${CHAPTER_ID}/page-${pageNumber}.webp`;
+      const filename = `page-${pageNumber}.webp`;
+      const outputFilePath = path.join(mangaOutputDir, filename);
 
       console.log(`⏳ Processing page ${pageNumber}/${allImages.length}: ${path.basename(imgPath)}`);
 
       // Optimize and convert via sharp
-      const webpBuffer = await sharp(imgPath)
+      await sharp(imgPath)
         .webp({ quality: 80 })
-        .toBuffer();
+        .toFile(outputFilePath);
 
-      // Upload to R2
-      await s3Client.send(
-        new PutObjectCommand({
-          Bucket: R2_BUCKET_NAME,
-          Key: r2Key,
-          Body: webpBuffer,
-          ContentType: "image/webp",
-        })
-      );
-
-      const pageUrl = `${R2_PUBLIC_URL}/${r2Key}`;
-      pageUrls.push(pageUrl);
+      // Construct the jsDelivr CDN URL
+      const cdnUrl = `https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@manga-assets/manga/${MANGA_ID}/${CHAPTER_ID}/${filename}`;
+      pageUrls.push(cdnUrl);
     }
 
-    console.log("✅ All pages optimized and uploaded to R2.");
+    console.log("✅ All pages optimized and saved locally for commit.");
 
     // 6. Database writes (Supabase)
     console.log("💾 Writing chapter data to Supabase database...");
@@ -205,21 +183,11 @@ async function main() {
 
     console.log(`✅ Chapter '${CHAPTER_TITLE}' saved to database successfully.`);
 
-    // 7. Cleanup: Delete raw ZIP from R2 temp folder
-    console.log(`🗑️ Cleaning up temp ZIP file in R2: ${ZIP_FILENAME}...`);
-    await s3Client.send(
-      new DeleteObjectCommand({
-        Bucket: R2_BUCKET_NAME,
-        Key: ZIP_FILENAME,
-      })
-    );
-    console.log("✅ R2 temp file deleted.");
-
   } catch (err) {
     console.error("❌ INGESTION FAILED:", err);
     process.exit(1);
   } finally {
-    // Local cleanup
+    // Local cleanup of temporary ZIP and extracted files
     if (fs.existsSync(tempZipPath)) {
       fs.unlinkSync(tempZipPath);
     }

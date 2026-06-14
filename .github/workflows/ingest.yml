@@ -1,4 +1,4 @@
-name: Manga Ingestion Worker
+name: Manga Ingestion Worker (GitHub + CDN)
 
 on:
   repository_dispatch:
@@ -7,9 +7,13 @@ on:
 jobs:
   ingest:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Allows pushing to the manga-assets branch
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all branches
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -18,20 +22,49 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install @aws-sdk/client-s3 @supabase/supabase-js sharp decompress
+          npm install @supabase/supabase-js sharp decompress axios
 
       - name: Run Ingestion Script
         run: |
+          # Create a separate folder outside the Git workspace to store processed images
+          mkdir -p ../manga-output
           node scripts/ingest.js
         env:
           MANGA_ID: ${{ github.event.client_payload.mangaId }}
           CHAPTER_ID: ${{ github.event.client_payload.chapterId }}
           CHAPTER_TITLE: ${{ github.event.client_payload.chapterTitle }}
-          ZIP_FILENAME: ${{ github.event.client_payload.zipFilename }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          ZIP_URL: ${{ github.event.client_payload.zipUrl }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+          RUST_BACKTRACE: 1
+
+      - name: Commit and Push WebP Pages to manga-assets branch
+        run: |
+          # Configure Git credentials
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          # Fetch all branches to ensure we can see manga-assets
+          git fetch origin
+          
+          # Check if origin/manga-assets exists
+          BRANCH_EXISTS=$(git branch -r | grep "origin/manga-assets" || true)
+          
+          if [ -n "$BRANCH_EXISTS" ]; then
+            echo "Branch manga-assets exists. Checking it out..."
+            git checkout manga-assets
+            git pull origin manga-assets
+          else
+            echo "Branch manga-assets does not exist. Creating orphan branch..."
+            git checkout --orphan manga-assets
+            git rm -rf .
+          fi
+          
+          # Copy optimized WebP pages from temporary output directory to the workspace root
+          mkdir -p manga
+          cp -r ../manga-output/manga/* ./manga/
+          
+          # Add, commit, and push
+          git add manga/
+          git commit -m "Upload WebP pages for ${MANGA_ID} - ${CHAPTER_ID}"
+          git push origin manga-assets
