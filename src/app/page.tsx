@@ -60,10 +60,6 @@ export default function Home() {
   const [adminSuccess, setAdminSuccess] = useState<string | null>(null);
   const [adminError, setAdminError] = useState<string | null>(null);
 
-  // Local ZIP Reader States
-  const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [localReaderLoading, setLocalReaderLoading] = useState<boolean>(false);
-  const [localBlobs, setLocalBlobs] = useState<string[]>([]);
 
   // Reader States
   const [activeManga, setActiveManga] = useState<Manga | null>(null);
@@ -455,92 +451,6 @@ export default function Home() {
     }
   };
 
-  // Local ZIP/CBZ processing via JSZip
-  const handleLocalZipFile = async (file: File) => {
-    setLocalReaderLoading(true);
-    try {
-      // Clean up previous blob URLs if any exist
-      if (localBlobs.length > 0) {
-        localBlobs.forEach(url => URL.revokeObjectURL(url));
-        setLocalBlobs([]);
-      }
-
-      const zip = new JSZip();
-      const loadedZip = await zip.loadAsync(file);
-      
-      // Filter out directories and non-images
-      const imageFiles = Object.keys(loadedZip.files).filter((name) => {
-        const fileObj = loadedZip.files[name];
-        return !fileObj.dir && /\.(png|jpe?g|webp|gif|bmp)$/i.test(name) && !name.includes("__MACOSX");
-      });
-
-      if (imageFiles.length === 0) {
-        alert("ไม่พบไฟล์รูปภาพใน ZIP/CBZ นี้");
-        setLocalReaderLoading(false);
-        return;
-      }
-
-      // Natural sort by filename
-      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-      imageFiles.sort((a, b) => collator.compare(a, b));
-
-      // Extract images as Blob URLs
-      const blobUrls: string[] = [];
-      for (const name of imageFiles) {
-        const imageBlob = await loadedZip.files[name].async("blob");
-        const url = URL.createObjectURL(imageBlob);
-        blobUrls.push(url);
-      }
-
-      setLocalBlobs(blobUrls);
-
-      const localManga: Manga = {
-        id: `local-${Date.now()}`,
-        title: file.name.replace(/\.[^/.]+$/, ""), // strip extension
-        author: "ไฟล์ในเครื่อง (Local Reader)",
-        cover: blobUrls[0] || "",
-        description: `ขนาดไฟล์: ${(file.size / (1024 * 1024)).toFixed(2)} MB, จำนวนหน้า: ${blobUrls.length} หน้า`,
-        chapters: [
-          {
-            id: "local-chapter",
-            title: "บทหลัก (Local)",
-            pages: blobUrls
-          }
-        ],
-        isOriginal: false
-      };
-
-      setLocalReaderLoading(false);
-      launchReader(localManga, "local-chapter", 0, 0);
-
-    } catch (err) {
-      console.error("Failed to parse local zip/cbz file:", err);
-      alert("เกิดข้อผิดพลาดในการอ่านไฟล์ ZIP/CBZ");
-      setLocalReaderLoading(false);
-    }
-  };
-
-  // Drag and Drop handlers
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    
-    const file = e.dataTransfer.files?.[0];
-    if (file && (file.name.endsWith(".zip") || file.name.endsWith(".cbz"))) {
-      handleLocalZipFile(file);
-    }
-  };
-
   // Handle Select Manga Card
   const handleSelectManga = (manga: Manga) => {
     const firstChapterId = manga.chapters[0].id;
@@ -580,10 +490,8 @@ export default function Home() {
   // Close Reader
   const handleCloseReader = () => {
     if (activeManga && activeChapterId) {
-      if (!activeManga.id.startsWith("local-")) {
-        saveProgress(activeManga.id, activeChapterId, currentPageIndex, scrollPercent);
-        syncProgressImmediately(activeManga.id, activeChapterId, currentPageIndex, scrollPercent);
-      }
+      saveProgress(activeManga.id, activeChapterId, currentPageIndex, scrollPercent);
+      syncProgressImmediately(activeManga.id, activeChapterId, currentPageIndex, scrollPercent);
     }
     setActiveManga(null);
     document.body.style.overflow = "";
@@ -591,12 +499,6 @@ export default function Home() {
     if (syncTimeoutRef.current) {
       clearTimeout(syncTimeoutRef.current);
       syncTimeoutRef.current = null;
-    }
-
-    // Revoke any local ZIP blobs on reader close to prevent memory leaks
-    if (localBlobs.length > 0) {
-      localBlobs.forEach(url => URL.revokeObjectURL(url));
-      setLocalBlobs([]);
     }
   };
 
@@ -733,12 +635,7 @@ export default function Home() {
     });
 
   return (
-    <div 
-      onDragOver={handleDragOver} 
-      onDragLeave={handleDragLeave} 
-      onDrop={handleDrop}
-      className="flex-1 w-full max-w-5xl mx-auto px-6 py-6 flex flex-col min-h-screen relative"
-    >
+    <div className="flex-1 w-full max-w-5xl mx-auto px-6 py-6 flex flex-col min-h-screen relative">
       
       {/* Premium Webtoon-Style Navigation Bar */}
       <nav className="flex justify-between items-center py-4 mb-8 border-b border-border transition-colors relative">
@@ -1088,43 +985,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Local ZIP / CBZ File Reader Widget */}
-        {activeTab !== "admin" && (
-          <div className="bg-surface/40 border border-dashed border-border rounded-2xl p-6 mb-8 text-center transition-all hover:border-accent/60 relative group">
-            <input 
-              type="file" 
-              id="local-file-input" 
-              accept=".zip,.cbz"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleLocalZipFile(file);
-              }}
-              className="hidden"
-            />
-            <label 
-              htmlFor="local-file-input"
-              className="flex flex-col items-center justify-center cursor-pointer gap-3"
-            >
-              <div className="p-3 bg-surface border border-border rounded-full group-hover:scale-110 transition-transform">
-                <FileArchive className="w-6 h-6 text-accent" />
-              </div>
-              <div className="space-y-1">
-                <p className="prompt-medium text-sm">
-                  {localReaderLoading ? "กำลังคลายบีบอัดไฟล์การ์ตูน..." : "อ่านจากไฟล์ ZIP / CBZ ในเครื่อง"}
-                </p>
-                <p className="prompt-light text-xs opacity-60">
-                  ลากและวางไฟล์ .zip หรือ .cbz ของคุณลงที่ใดก็ได้ในหน้าจอ หรือคลิกเพื่ออัปโหลดเพื่อเปิดอ่านแบบออฟไลน์
-                </p>
-              </div>
-            </label>
-            {localReaderLoading && (
-              <div className="absolute inset-0 bg-surface/80 backdrop-blur-sm rounded-2xl flex items-center justify-center gap-2">
-                <Loader2 className="w-5 h-5 text-accent animate-spin" />
-                <span className="text-xs prompt-medium">กำลังโหลดไฟล์การ์ตูน...</span>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Tab Sub-controls for secondary filtering (Genres / Ranking views) */}
         {activeTab === "genres" && (
@@ -1608,20 +1468,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Drag and Drop Fullscreen Overlay */}
-      {isDragging && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-md z-[2000] flex flex-col items-center justify-center pointer-events-none animate-in fade-in duration-200">
-          <div className="border-2 border-dashed border-accent/60 rounded-3xl p-16 flex flex-col items-center justify-center gap-4 max-w-lg mx-auto m-6">
-            <FileArchive className="w-16 h-16 text-accent animate-bounce" />
-            <p className="prompt-semibold text-lg text-foreground text-center">
-              วางไฟล์ ZIP หรือ CBZ ของคุณที่นี่เพื่อเปิดอ่านแบบออฟไลน์
-            </p>
-            <p className="prompt-light text-xs opacity-60 text-center">
-              ระบบจะคลายรูปภาพและรันโปรแกรมอ่านในเบราว์เซอร์ของคุณทันทีโดยไม่บันทึกลงเซิร์ฟเวอร์
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Supabase Authentication Modal */}
       {isAuthModalOpen && (
