@@ -1,7 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
+import { supabase } from "../../../../lib/supabaseClient";
 
 export async function POST(request: NextRequest) {
   try {
+    // 1. Authenticate user and verify Admin privileges
+    const authHeader = request.headers.get("Authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
+
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized: Missing authentication token" }, { status: 401 });
+    }
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized: Invalid session" }, { status: 401 });
+    }
+
+    // Check app_metadata.role or environment ADMIN_EMAILS
+    let isAdmin = user.app_metadata?.role === "admin";
+    const adminEmailsEnv = process.env.ADMIN_EMAILS;
+    if (!isAdmin && adminEmailsEnv && user.email) {
+      const allowedEmails = adminEmailsEnv.split(",").map(e => e.trim().toLowerCase());
+      isAdmin = allowedEmails.includes(user.email.toLowerCase());
+    }
+
+    if (!isAdmin) {
+      return NextResponse.json({ error: "Forbidden: Admin privileges required" }, { status: 403 });
+    }
+
+    // 2. Validate input body
     const body = await request.json();
     const { mangaId, chapterId, chapterTitle, zipUrl } = body;
 
@@ -19,7 +46,7 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // Call GitHub Repository Dispatch API
+    // 3. Call GitHub Repository Dispatch API
     const dispatchUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/dispatches`;
     const response = await fetch(dispatchUrl, {
       method: "POST",

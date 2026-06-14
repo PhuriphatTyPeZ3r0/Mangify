@@ -51,6 +51,7 @@ export default function Home() {
   const [authError, setAuthError] = useState<string | null>(null);
 
   // Admin Ingestion States
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [adminMangaId, setAdminMangaId] = useState<string>("");
   const [adminChapterId, setAdminChapterId] = useState<string>("");
   const [adminChapterTitle, setAdminChapterTitle] = useState<string>("");
@@ -106,6 +107,26 @@ export default function Home() {
       }
     };
 
+    // Check admin status helper
+    const checkAdminStatus = async (token?: string) => {
+      if (!token) {
+        setIsAdmin(false);
+        return;
+      }
+      try {
+        const res = await fetch("/api/admin/check", {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+        const data = await res.json();
+        setIsAdmin(!!data.isAdmin);
+      } catch (err) {
+        console.error("Failed to check admin privileges:", err);
+        setIsAdmin(false);
+      }
+    };
+
     // Fetch catalog from database
     const fetchCatalog = async () => {
       try {
@@ -126,8 +147,10 @@ export default function Home() {
       if (currentSession) {
         setUserId(currentSession.user.id);
         fetchBookmarksForUser(currentSession.user.id, currentSession.access_token);
+        checkAdminStatus(currentSession.access_token);
       } else {
         fetchBookmarksForUser(savedUserId);
+        setIsAdmin(false);
       }
     });
 
@@ -137,10 +160,13 @@ export default function Home() {
       if (currentSession) {
         setUserId(currentSession.user.id);
         fetchBookmarksForUser(currentSession.user.id, currentSession.access_token);
+        checkAdminStatus(currentSession.access_token);
       } else {
         const localUid = localStorage.getItem("mangify-user-id") || savedUserId;
         setUserId(localUid);
         fetchBookmarksForUser(localUid);
+        setIsAdmin(false);
+        setActiveTab(prev => prev === "admin" ? "originals" : prev);
       }
     });
 
@@ -394,11 +420,16 @@ export default function Home() {
     setAdminError(null);
 
     try {
+      const headers: HeadersInit = {
+        "Content-Type": "application/json"
+      };
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
       const res = await fetch("/api/admin/ingest", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers,
         body: JSON.stringify({
           mangaId: adminMangaId.trim(),
           chapterId: adminChapterId.trim(),
@@ -787,20 +818,22 @@ export default function Home() {
                 )}
               </button>
             </li>
-            <li>
-              <button 
-                onClick={() => handleTabChange("admin")}
-                className={`py-2 px-1 relative transition-colors hover:text-accent flex items-center gap-1 cursor-pointer ${
-                  activeTab === "admin" ? "text-accent font-semibold" : "opacity-80"
-                }`}
-              >
-                <Shield className="w-3.5 h-3.5" />
-                ผู้ดูแลระบบ
-                {activeTab === "admin" && (
-                  <span className="absolute bottom-[-17px] left-0 w-full h-[2px] bg-accent transition-colors" />
-                )}
-              </button>
-            </li>
+            {isAdmin && (
+              <li>
+                <button 
+                  onClick={() => handleTabChange("admin")}
+                  className={`py-2 px-1 relative transition-colors hover:text-accent flex items-center gap-1 cursor-pointer ${
+                    activeTab === "admin" ? "text-accent font-semibold" : "opacity-80"
+                  }`}
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  ผู้ดูแลระบบ
+                  {activeTab === "admin" && (
+                    <span className="absolute bottom-[-17px] left-0 w-full h-[2px] bg-accent transition-colors" />
+                  )}
+                </button>
+              </li>
+            )}
           </ul>
         </div>
  
@@ -945,17 +978,19 @@ export default function Home() {
                   บุ๊กมาร์ก
                 </button>
               </li>
-              <li>
-                <button 
-                  onClick={() => handleTabChange("admin")}
-                  className={`w-full text-left py-2 border-b border-transparent hover:text-accent flex items-center gap-2 transition-colors ${
-                    activeTab === "admin" ? "text-accent font-semibold" : "opacity-80"
-                  }`}
-                >
-                  <Shield className="w-4 h-4 text-accent/80" />
-                  ผู้ดูแลระบบ
-                </button>
-              </li>
+              {isAdmin && (
+                <li>
+                  <button 
+                    onClick={() => handleTabChange("admin")}
+                    className={`w-full text-left py-2 border-b border-transparent hover:text-accent flex items-center gap-2 transition-colors ${
+                      activeTab === "admin" ? "text-accent font-semibold" : "opacity-80"
+                    }`}
+                  >
+                    <Shield className="w-4 h-4 text-accent/80" />
+                    ผู้ดูแลระบบ
+                  </button>
+                </li>
+              )}
               <li className="mt-2 border-t border-border/50 pt-4">
                 {session ? (
                   <div className="flex flex-col gap-1.5">
@@ -1163,7 +1198,7 @@ export default function Home() {
           </div>
         )}
 
-        {activeTab === "admin" ? (
+        {activeTab === "admin" && isAdmin ? (
           <div className="bg-surface border border-border rounded-2xl p-6 md:p-8 max-w-2xl mx-auto w-full mb-16 shadow-sm animate-in fade-in duration-300">
             <div className="flex items-center gap-3 mb-6 border-b border-border/60 pb-4">
               <Shield className="w-6 h-6 text-accent" />
