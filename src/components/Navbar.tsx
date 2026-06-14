@@ -35,9 +35,14 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="flex items-center gap-4 lg:gap-8 xl:gap-10">
         <button 
           onClick={() => handleTabClick("originals")}
-          className="prompt-bold text-2xl lg:text-3xl tracking-tight bg-gradient-to-r from-foreground to-accent bg-clip-text text-transparent hover:opacity-90 cursor-pointer flex-shrink-0"
+          className="flex items-center gap-2 group cursor-pointer"
         >
-          Mangify
+          <span className="material-symbols-outlined text-accent text-3xl transition-transform group-hover:scale-110 group-hover:rotate-[-5deg]">
+            book_5
+          </span>
+          <span className="prompt-bold text-2xl lg:text-3xl tracking-tight bg-gradient-to-r from-foreground to-accent bg-clip-text text-transparent opacity-95">
+            Mangify
+          </span>
         </button>
         
         {/* Desktop Navigation Links */}
