@@ -8,9 +8,33 @@ This plan details the database schema (PostgreSQL) and the Next.js API endpoints
 
 ```mermaid
 erDiagram
+    MANGA ||--|{ CHAPTERS : "contains"
     PROFILES ||--o{ BOOKMARKS : "has"
     PROFILES ||--o{ READING_PROGRESS : "has"
+    MANGA ||--o{ BOOKMARKS : "bookmarked"
+    MANGA ||--o{ READING_PROGRESS : "tracks"
+    CHAPTERS ||--o{ READING_PROGRESS : "tracks"
     
+    MANGA {
+        text id PK "Slug name (e.g. webtoon-character-kang-lim)"
+        text title
+        text author
+        text cover
+        text description
+        text[] genres
+        boolean is_original
+        integer popularity
+        timestamp created_at
+    }
+
+    CHAPTERS {
+        text id PK "e.g. kanglim-ch1"
+        text manga_id FK
+        text title
+        text[] pages "Array of page WebP URLs"
+        timestamp created_at
+    }
+
     PROFILES {
         uuid id PK "References auth.users.id"
         timestamp updated_at
@@ -19,39 +43,59 @@ erDiagram
     BOOKMARKS {
         bigint id PK
         text user_id "UUID or Anonymous Device ID"
-        text manga_id "Manga Identifier"
+        text manga_id FK
         timestamp created_at
     }
     
     READING_PROGRESS {
         bigint id PK
         text user_id "UUID or Anonymous Device ID"
-        text manga_id
-        text chapter_id
+        text manga_id FK
+        text chapter_id FK
         integer page_index
         float scroll_percent
         timestamp updated_at
     }
 ```
 
-### 1. Table: `profiles`
+### 1. Table: `manga`
+Catalog metadata for manga titles.
+- `id` (Text, Primary Key)
+- `title` (Text)
+- `author` (Text)
+- `cover` (Text)
+- `description` (Text)
+- `genres` (Text[] array)
+- `is_original` (Boolean)
+- `popularity` (Integer)
+- `created_at` (Timestamp)
+
+### 2. Table: `chapters`
+List of pages grouped by chapter.
+- `id` (Text, Primary Key)
+- `manga_id` (Text, Foreign Key references `manga.id`)
+- `title` (Text)
+- `pages` (Text[] array of absolute WebP URLs)
+- `created_at` (Timestamp)
+
+### 3. Table: `profiles`
 Holds authenticated user metadata. Linked 1:1 with Supabase Auth.
 - `id` (UUID, Primary Key, references `auth.users`)
 - `updated_at` (Timestamp with timezone)
 
-### 2. Table: `bookmarks`
+### 4. Table: `bookmarks`
 Track manga bookmarks for both registered users (UUID) and anonymous users (Device ID).
 - `id` (BigInt, Identity, Primary Key)
 - `user_id` (Text, Indexed) - Can be UUID or LocalStorage Device UUID.
-- `manga_id` (Text, Indexed)
+- `manga_id` (Text, Foreign Key references `manga.id`)
 - `created_at` (Timestamp with timezone)
 
-### 3. Table: `reading_progress`
+### 5. Table: `reading_progress`
 Track scroll percent and active pages.
 - `id` (BigInt, Identity, Primary Key)
 - `user_id` (Text, Indexed)
-- `manga_id` (Text)
-- `chapter_id` (Text)
+- `manga_id` (Text, Foreign Key references `manga.id`)
+- `chapter_id` (Text, Foreign Key references `chapters.id`)
 - `page_index` (Integer)
 - `scroll_percent` (Float/Numeric)
 - `updated_at` (Timestamp with timezone)

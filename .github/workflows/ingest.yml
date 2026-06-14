@@ -1,0 +1,37 @@
+name: Manga Ingestion Worker
+
+on:
+  repository_dispatch:
+    types: [ingest_manga]
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          npm install @aws-sdk/client-s3 @supabase/supabase-js sharp decompress
+
+      - name: Run Ingestion Script
+        run: |
+          node scripts/ingest.js
+        env:
+          MANGA_ID: ${{ github.event.client_payload.mangaId }}
+          CHAPTER_ID: ${{ github.event.client_payload.chapterId }}
+          CHAPTER_TITLE: ${{ github.event.client_payload.chapterTitle }}
+          ZIP_FILENAME: ${{ github.event.client_payload.zipFilename }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
