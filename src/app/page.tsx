@@ -19,7 +19,7 @@ import { demoManga as initialManga } from "../data/mangaData";
 import { Manga, Theme, ReadingMode, ReadingProgress } from "../types";
 
 export default function Home() {
-  const [mangas] = useState<Manga[]>(initialManga);
+  const [mangas, setMangas] = useState<Manga[]>(initialManga);
   const [activeTheme, setActiveTheme] = useState<Theme>("light");
   const [history, setHistory] = useState<ReadingProgress | null>(null);
 
@@ -45,7 +45,7 @@ export default function Home() {
   const lastSyncedProgressRef = useRef<{ chapterId: string; pageIndex: number; scrollPercent: number } | null>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load theme, history, and bookmarks on mount
+  // Load theme, history, bookmarks, and catalog on mount
   useEffect(() => {
     // Initialize user ID
     let savedUserId = localStorage.getItem("mangify-user-id");
@@ -69,6 +69,20 @@ export default function Home() {
       }
     };
     fetchBookmarks();
+
+    // Fetch catalog from database
+    const fetchCatalog = async () => {
+      try {
+        const res = await fetch("/api/catalog");
+        const data = await res.json();
+        if (data.mangas && data.mangas.length > 0) {
+          setMangas(data.mangas);
+        }
+      } catch (err) {
+        console.error("Failed to fetch catalog:", err);
+      }
+    };
+    fetchCatalog();
 
     const savedTheme = localStorage.getItem("mangify-theme") as Theme;
     if (savedTheme) {
