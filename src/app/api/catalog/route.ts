@@ -1,6 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../lib/supabaseClient";
 
+const genreTranslationMap: Record<string, string> = {
+  "Action": "ศิลปะการต่อสู้-แอคชั่น",
+  "Adventure": "ผจญภัย",
+  "Comedy": "ตลก",
+  "Drama": "ดราม่า",
+  "Fantasy": "แฟนตาซี",
+  "Harem": "ฮาเร็ม",
+  "Historical": "ย้อนยุค",
+  "Martial Arts": "ศิลปะการต่อสู้-แอคชั่น",
+  "Mystery": "ลึกลับ",
+  "Psychological": "จิตวิทยา",
+  "Romance": "โรแมนติก",
+  "School Life": "ชีวิตในโรงเรียน",
+  "Sci-fi": "ไซไฟ",
+  "Seinen": "เซเน็น",
+  "Shounen": "โชเน็น",
+  "Slice of Life": "ชีวิตประจำวัน",
+  "Supernatural": "เหนือธรรมชาติ",
+  "Tragedy": "โศกนาฏกรรม",
+  "ภัยภิบัติ": "ภัยพิบัติ",
+};
+
+const ignoredTags = new Set(["Webtoon", "Kakao"]);
+
+function cleanGenres(genres: string[]): string[] {
+  if (!genres || !Array.isArray(genres)) return [];
+  const mapped = genres
+    .map(g => {
+      const trimmed = g.trim();
+      return genreTranslationMap[trimmed] || trimmed;
+    })
+    .filter(g => !ignoredTags.has(g) && g !== "");
+  return Array.from(new Set(mapped));
+}
+
 export async function GET() {
   try {
     // 1. Fetch all manga records from Supabase using supabaseAdmin
@@ -108,7 +143,7 @@ export async function GET() {
         author: m.author || "Unknown",
         cover: m.cover || "",
         description: m.description || "",
-        genres: m.genres || [],
+        genres: cleanGenres(m.genres || []),
         popularity: m.popularity || 0,
         isOriginal: m.is_original,
         originalTitle: m.original_title || "",
