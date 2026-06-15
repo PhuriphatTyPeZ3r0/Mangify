@@ -26,7 +26,14 @@ export default function Home() {
   const [activeTheme, setActiveTheme] = useState<Theme>("light");
   const [selectedMangaInfo, setSelectedMangaInfo] = useState<Manga | null>(null);
   const [history, setHistory] = useState<ReadingProgress | null>(null);
+  const [historyList, setHistoryList] = useState<ReadingProgress[]>([]);
+  const [userId, setUserId] = useState<string>("");
   const [bookmarks, setBookmarks] = useState<string[]>([]);
+
+  // Keep active history (banner) in sync with the latest item in the history list
+  useEffect(() => {
+    setHistory(historyList[0] || null);
+  }, [historyList]);
   
   // --- Auth State ---
   const [session, setSession] = useState<any>(null);
@@ -86,35 +93,81 @@ export default function Home() {
     }
   };
 
-  const fetchUserData = async (userId: string) => {
+  const logEvent = async (eventType: string, metadata: any = {}) => {
+    const localUid = userId || localStorage.getItem("mangify-user-id") || "";
+    if (!localUid) return;
     try {
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+      await fetch("/api/logs", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ userId: localUid, eventType, metadata })
+      });
+    } catch (err) {
+      console.error(`Failed to log event ${eventType}:`, err);
+    }
+  };
+
+  const handleSelectManga = (manga: Manga | null) => {
+    setSelectedMangaInfo(manga);
+    if (manga) {
+      logEvent("manga_view", { manga_id: manga.id });
+    }
+  };
+
+  const fetchUserData = async (targetUserId: string, token: string | null = null) => {
+    try {
+      const headers: HeadersInit = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       // Fetch Progress
-      const pRes = await fetch(`/api/sync/progress?userId=${userId}`);
+      const pRes = await fetch(`/api/sync/progress?userId=${targetUserId}`, { headers });
       const pData = await pRes.json();
       if (pData.progress && pData.progress.length > 0) {
-        const last = pData.progress[0];
-        setHistory({
-          mangaId: last.manga_id,
-          chapterId: last.chapter_id,
-          pageIndex: last.page_index,
-          scrollPercent: last.scroll_percent
-        });
+        const mappedList = pData.progress.map((item: any) => ({
+          mangaId: item.manga_id,
+          chapterId: item.chapter_id,
+          pageIndex: item.page_index,
+          scrollPercent: item.scroll_percent
+        }));
+        setHistoryList(mappedList);
+      } else {
+        // Fallback to localStorage if empty
+        const localHistory = localStorage.getItem("mangify-history-list");
+        if (localHistory) {
+          setHistoryList(JSON.parse(localHistory));
+        } else {
+          const legacyHistory = localStorage.getItem("mangify-history");
+          if (legacyHistory) setHistoryList([JSON.parse(legacyHistory)]);
+        }
       }
 
       // Fetch Bookmarks
-      const bRes = await fetch(`/api/sync/bookmarks?userId=${userId}`);
+      const bRes = await fetch(`/api/sync/bookmarks?userId=${targetUserId}`, { headers });
       const bData = await bRes.json();
       if (bData.bookmarks) {
         setBookmarks(bData.bookmarks.map((b: any) => b.manga_id));
+      } else {
+        const localBookmarks = localStorage.getItem("mangify-bookmarks");
+        if (localBookmarks) setBookmarks(JSON.parse(localBookmarks));
       }
     } catch (err) {
       console.error("Sync error:", err);
+      loadLocalData();
     }
   };
 
   const loadLocalData = () => {
-    const localHistory = localStorage.getItem("mangify-history");
-    if (localHistory) setHistory(JSON.parse(localHistory));
+    const localHistory = localStorage.getItem("mangify-history-list");
+    if (localHistory) {
+      setHistoryList(JSON.parse(localHistory));
+    } else {
+      const legacyHistory = localStorage.getItem("mangify-history");
+      if (legacyHistory) setHistoryList([JSON.parse(legacyHistory)]);
+    }
     
     const localBookmarks = localStorage.getItem("mangify-bookmarks");
     if (localBookmarks) setBookmarks(JSON.parse(localBookmarks));
@@ -135,22 +188,36 @@ export default function Home() {
   const handleToggleBookmark = async (e: React.MouseEvent, mangaId: string) => {
     e.stopPropagation();
     let newBookmarks = [...bookmarks];
-    if (bookmarks.includes(mangaId)) {
-      newBookmarks = newBookmarks.filter(id => id !== mangaId);
-    } else {
+    const isAdding = !bookmarks.includes(mangaId);
+    if (isAdding) {
       newBookmarks.push(mangaId);
+    } else {
+      newBookmarks = newBookmarks.filter(id => id !== mangaId);
     }
     setBookmarks(newBookmarks);
+    localStorage.setItem("mangify-bookmarks", JSON.stringify(newBookmarks));
 
-    if (session) {
-      // Sync to Cloud
-      await fetch("/api/sync/bookmarks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: session.user.id, mangaId })
-      });
-    } else {
-      localStorage.setItem("mangify-bookmarks", JSON.stringify(newBookmarks));
+    const headers: HeadersInit = { "Content-Type": "application/json" };
+    if (session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
+    }
+
+    try {
+      if (isAdding) {
+        await fetch("/api/sync/bookmarks", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ userId, mangaId })
+        });
+      } else {
+        await fetch(`/api/sync/bookmarks?userId=${userId}&mangaId=${mangaId}`, {
+          method: "DELETE",
+          headers
+        });
+      }
+      logEvent("bookmark_toggle", { manga_id: mangaId, action: isAdding ? "add" : "remove" });
+    } catch (err) {
+      console.error("Failed to toggle bookmark:", err);
     }
   };
 
@@ -163,6 +230,9 @@ export default function Home() {
     setIsReaderOpen(true);
     resetControlsTimeout();
     
+    // Log chapter read event
+    logEvent("chapter_read", { manga_id: manga.id, chapter_id: chapterId });
+
     // Auto-scroll logic if vertical
     if (readingMode === "vertical") {
       // Instantly try to reset scroll to top to prevent double scroll events
@@ -228,7 +298,7 @@ export default function Home() {
 
   const debouncedSyncProgress = (scroll: number, page: number) => {
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
-    syncTimeoutRef.current = setTimeout(() => {
+    syncTimeoutRef.current = setTimeout(async () => {
       if (!activeManga || !activeChapterId) return;
       
       const progress: ReadingProgress = {
@@ -238,16 +308,27 @@ export default function Home() {
         scrollPercent: scroll
       };
       
-      setHistory(progress);
-
-      if (session) {
-        fetch("/api/sync/progress", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: session.user.id, ...progress })
-        });
-      } else {
+      setHistoryList(prev => {
+        const filtered = prev.filter(p => p.mangaId !== progress.mangaId);
+        const updated = [progress, ...filtered];
+        localStorage.setItem("mangify-history-list", JSON.stringify(updated));
         localStorage.setItem("mangify-history", JSON.stringify(progress));
+        return updated;
+      });
+
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
+      try {
+        await fetch("/api/sync/progress", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ userId, ...progress })
+        });
+      } catch (err) {
+        console.error("Failed to sync progress:", err);
       }
     }, 1000);
   };
@@ -375,30 +456,106 @@ export default function Home() {
     }
   }
 
+  const syncAnonymousDataToUser = async (authUserId: string, token: string) => {
+    // 1. Sync bookmarks
+    const localBookmarks = localStorage.getItem("mangify-bookmarks");
+    const bookmarksToSync = localBookmarks ? JSON.parse(localBookmarks) : bookmarks;
+    for (const mangaId of bookmarksToSync) {
+      try {
+        await fetch("/api/sync/bookmarks", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ userId: authUserId, mangaId }),
+        });
+      } catch (e) {
+        console.error("Failed to sync bookmark to cloud:", mangaId, e);
+      }
+    }
+
+    // 2. Sync reading history
+    const localHistoryList = localStorage.getItem("mangify-history-list");
+    const historyToSync = localHistoryList ? JSON.parse(localHistoryList) : historyList;
+    for (const progress of historyToSync) {
+      try {
+        await fetch("/api/sync/progress", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ userId: authUserId, ...progress }),
+        });
+      } catch (e) {
+        console.error("Failed to sync progress to cloud:", progress.mangaId, e);
+      }
+    }
+  };
+
   // --- Effects ---
   useEffect(() => {
     // Initial data load from Supabase
     fetchMangas();
     
+    // Load or generate anonymous ID
+    let anonId = localStorage.getItem("mangify-user-id");
+    if (!anonId) {
+      const randomPart = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      anonId = `anon-${randomPart}`;
+      localStorage.setItem("mangify-user-id", anonId);
+    }
+    setUserId(anonId);
+
     // Auth Listener
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       if (session) {
+        setUserId(session.user.id);
         checkAdminStatus(session.user.id);
-        fetchUserData(session.user.id);
+        await fetchUserData(session.user.id, session.access_token);
       } else {
-        loadLocalData();
+        await fetchUserData(anonId, null);
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
       if (session) {
+        setUserId(session.user.id);
         checkAdminStatus(session.user.id);
-        fetchUserData(session.user.id);
+        
+        if (event === "SIGNED_IN") {
+          await syncAnonymousDataToUser(session.user.id, session.access_token);
+          // Clean local storage anonymous keys to avoid re-syncing next time
+          localStorage.removeItem("mangify-bookmarks");
+          localStorage.removeItem("mangify-history-list");
+          localStorage.removeItem("mangify-history");
+
+          // Log login action
+          fetch("/api/logs", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ userId: session.user.id, eventType: "auth_action", metadata: { action: "login" } })
+          }).catch(console.error);
+        }
+        await fetchUserData(session.user.id, session.access_token);
       } else {
         setIsAdmin(false);
-        loadLocalData();
+        setUserId(anonId);
+        await fetchUserData(anonId, null);
+        
+        if (event === "SIGNED_OUT") {
+          fetch("/api/logs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: anonId, eventType: "auth_action", metadata: { action: "logout" } })
+          }).catch(console.error);
+        }
       }
     });
 
@@ -459,7 +616,7 @@ export default function Home() {
                     filteredMangas={sortedByRanking.slice(0, 10)}
                     bookmarks={bookmarks}
                     allMangas={mangas}
-                    onSelectManga={setSelectedMangaInfo}
+                    onSelectManga={handleSelectManga}
                     onToggleBookmark={handleToggleBookmark}
                     onTabChange={handleTabChange}
                   />
@@ -478,11 +635,117 @@ export default function Home() {
                     filteredMangas={sortedByUpdates.slice(0, 10)}
                     bookmarks={bookmarks}
                     allMangas={mangas}
-                    onSelectManga={setSelectedMangaInfo}
+                    onSelectManga={handleSelectManga}
                     onToggleBookmark={handleToggleBookmark}
                     onTabChange={handleTabChange}
                   />
                 </section>
+              </div>
+            ) : activeTab === "history" ? (
+              <div className="animate-in fade-in duration-500">
+                <div className="flex justify-between items-center mb-8 border-b border-border/50 pb-4">
+                  <h2 className="prompt-semibold text-xl flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[24px] text-accent">history</span>
+                    ประวัติการอ่านของฉัน
+                  </h2>
+                  {historyList.length > 0 && (
+                    <button 
+                      onClick={() => {
+                        if (confirm("คุณต้องการล้างประวัติการอ่านทั้งหมดใช่หรือไม่?")) {
+                          setHistoryList([]);
+                          localStorage.removeItem("mangify-history-list");
+                          localStorage.removeItem("mangify-history");
+                          
+                          const headers: HeadersInit = {};
+                          if (session?.access_token) {
+                            headers["Authorization"] = `Bearer ${session.access_token}`;
+                          }
+                          fetch(`/api/sync/progress?userId=${userId}`, {
+                            method: "DELETE",
+                            headers
+                          }).catch(console.error);
+                        }
+                      }}
+                      className="text-xs prompt-medium text-destructive hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">delete</span>
+                      ล้างประวัติทั้งหมด
+                    </button>
+                  )}
+                </div>
+
+                {historyList.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+                    {historyList.map(item => {
+                      const manga = mangas.find(m => m.id === item.mangaId);
+                      if (!manga) return null;
+                      const chapter = manga.chapters.find(ch => ch.id === item.chapterId);
+                      return (
+                        <div 
+                          key={item.mangaId}
+                          onClick={() => handleSelectManga(manga)}
+                          className="group border border-border/60 bg-surface rounded-xl p-4 flex gap-4 hover:border-accent hover:shadow-md transition-all duration-300 cursor-pointer"
+                        >
+                          {/* Manga Cover */}
+                          <div className="w-16 h-22 rounded-lg overflow-hidden flex-shrink-0 border border-border/20 shadow-sm relative">
+                            <img src={manga.cover} alt={manga.title} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                          </div>
+                          
+                          {/* Manga Info & Progress */}
+                          <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                            <div>
+                              <h3 className="prompt-semibold text-sm truncate group-hover:text-accent transition-colors">
+                                {manga.title}
+                              </h3>
+                              <p className="prompt-light text-[11px] opacity-60 mt-0.5">โดย {manga.author}</p>
+                            </div>
+                            
+                            <div className="mt-2">
+                              <p className="prompt-medium text-xs text-accent truncate">
+                                {chapter?.title || "ตอนล่าสุด"}
+                              </p>
+                              {/* Progress bar */}
+                              <div className="w-full h-1 bg-border/80 rounded-full mt-1.5 overflow-hidden">
+                                <div 
+                                  className="h-full bg-accent rounded-full transition-all duration-500" 
+                                  style={{ width: `${item.scrollPercent}%` }}
+                                />
+                              </div>
+                              <p className="prompt-light text-[10px] opacity-50 mt-1">
+                                อ่านค้างไว้: {Math.round(item.scrollPercent)}%
+                              </p>
+                            </div>
+                          </div>
+                          
+                          {/* Resume Button */}
+                          <div className="flex items-center">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleLaunchReader(manga, item.chapterId, item.pageIndex, item.scrollPercent);
+                              }}
+                              className="w-8 h-8 rounded-full bg-accent/10 text-accent flex items-center justify-center hover:bg-accent hover:text-white transition-all cursor-pointer shadow-sm group-hover:scale-105"
+                              title="อ่านต่อ"
+                            >
+                              <span className="material-symbols-outlined text-[16px] fill">play_arrow</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-20 border border-dashed border-border/60 rounded-xl mb-16">
+                    <span className="material-symbols-outlined text-[40px] opacity-40 mb-3">history</span>
+                    <p className="prompt-medium text-lg opacity-70">ไม่มีประวัติการอ่านที่บันทึกไว้</p>
+                    <button 
+                      onClick={() => handleTabChange("originals")}
+                      className="mt-3 text-xs prompt-medium text-accent hover:underline cursor-pointer"
+                    >
+                      กลับหน้าหลักเพื่อเลือกมังงะ
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <>
@@ -540,7 +803,7 @@ export default function Home() {
                   filteredMangas={filteredMangas}
                   bookmarks={bookmarks}
                   allMangas={mangas}
-                  onSelectManga={setSelectedMangaInfo}
+                  onSelectManga={handleSelectManga}
                   onToggleBookmark={handleToggleBookmark}
                   onTabChange={handleTabChange}
                 />
@@ -554,7 +817,7 @@ export default function Home() {
       {selectedMangaInfo && (
         <MangaInfoModal 
           manga={selectedMangaInfo}
-          onClose={() => setSelectedMangaInfo(null)}
+          onClose={() => handleSelectManga(null)}
           history={history}
           bookmarks={bookmarks}
           onLaunchReader={handleLaunchReader}

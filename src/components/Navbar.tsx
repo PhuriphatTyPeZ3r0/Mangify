@@ -100,6 +100,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
           </li>
+          <li>
+            <button 
+              onClick={() => handleTabClick("history")}
+              className={`py-2 px-1 relative transition-colors hover:text-accent cursor-pointer whitespace-nowrap ${
+                activeTab === "history" ? "text-accent font-semibold" : "opacity-80"
+              }`}
+            >
+              ประวัติการอ่าน
+              {activeTab === "history" && (
+                <span className="absolute bottom-[-17px] left-0 w-full h-[2px] bg-accent transition-colors" />
+              )}
+            </button>
+          </li>
           {isAdmin && (
             <li>
               <button 
@@ -249,6 +262,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 บุ๊กมาร์ก
+              </button>
+            </li>
+            <li>
+              <button 
+                onClick={() => handleTabClick("history")}
+                className={`w-full text-left py-2 border-b border-transparent hover:text-accent transition-colors ${
+                  activeTab === "history" ? "text-accent font-semibold" : "opacity-80"
+                }`}
+              >
+                ประวัติการอ่าน
               </button>
             </li>
             {isAdmin && (

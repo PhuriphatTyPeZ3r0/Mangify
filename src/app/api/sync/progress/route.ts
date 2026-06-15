@@ -26,12 +26,12 @@ export async function GET(request: NextRequest) {
           global: { headers: { Authorization: `Bearer ${token}` } }
         }
       );
-      query = userSupabase.from("reading_progress").select("*").eq("user_id", userId);
+      query = userSupabase.from("reading_progress").select("*").eq("user_id", userId).order("updated_at", { ascending: false });
     } else {
       if (!userId.startsWith("anon-")) {
         return NextResponse.json({ error: "Invalid user ID format" }, { status: 401 });
       }
-      query = supabaseAdmin.from("reading_progress").select("*").eq("user_id", userId);
+      query = supabaseAdmin.from("reading_progress").select("*").eq("user_id", userId).order("updated_at", { ascending: false });
     }
 
     if (mangaId) {
@@ -105,6 +105,55 @@ export async function POST(request: NextRequest) {
           scroll_percent: scrollPercent,
           updated_at: new Date().toISOString()
         }, { onConflict: "user_id,manga_id" });
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+// 3. DELETE: Clear progress
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get("userId");
+
+    if (!userId) {
+      return NextResponse.json({ error: "Missing userId parameter" }, { status: 400 });
+    }
+
+    const authHeader = request.headers.get("Authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
+
+    if (token) {
+      const userSupabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+        {
+          global: { headers: { Authorization: `Bearer ${token}` } }
+        }
+      );
+      const { error } = await userSupabase
+        .from("reading_progress")
+        .delete()
+        .eq("user_id", userId);
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+    } else {
+      if (!userId.startsWith("anon-")) {
+        return NextResponse.json({ error: "Invalid user ID format" }, { status: 401 });
+      }
+      const { error } = await supabaseAdmin
+        .from("reading_progress")
+        .delete()
+        .eq("user_id", userId);
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
