@@ -26,6 +26,10 @@ export interface Manga {
   type?: string;
   year?: number;
   views?: string;
+  realViews?: number;
+  realBookmarks?: number;
+  numericViews?: number;
+  lastUpdate?: string;
 }
 
 export interface ReadingProgress {

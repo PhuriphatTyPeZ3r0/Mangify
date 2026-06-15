@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "../../../lib/supabaseClient";
+import { supabaseAdmin } from "../../../lib/supabaseClient";
 
 export async function GET() {
   try {
-    // 1. Fetch all manga records from Supabase
-    const { data: mangasData, error: mangaError } = await supabase
+    // 1. Fetch all manga records from Supabase using supabaseAdmin
+    const { data: mangasData, error: mangaError } = await supabaseAdmin
       .from("manga")
       .select("*")
       .order("created_at", { ascending: false });
 
     if (mangaError) {
-      // If table does not exist or Supabase variables are placeholder, fallback to empty array
       console.warn("⚠️ Failed to fetch manga catalog from DB:", mangaError.message);
       return NextResponse.json({ mangas: [] });
     }
@@ -19,8 +18,8 @@ export async function GET() {
       return NextResponse.json({ mangas: [] });
     }
 
-    // 2. Fetch all chapters
-    const { data: chaptersData, error: chaptersError } = await supabase
+    // 2. Fetch all chapters using supabaseAdmin
+    const { data: chaptersData, error: chaptersError } = await supabaseAdmin
       .from("chapters")
       .select("*")
       .order("created_at", { ascending: true });
@@ -30,7 +29,48 @@ export async function GET() {
       return NextResponse.json({ mangas: [] });
     }
 
-    // 3. Map database rows to the client-side Manga interface
+    // 3. Fetch bookmarks counts to aggregate
+    const { data: bookmarksData, error: bookmarksError } = await supabaseAdmin
+      .from("bookmarks")
+      .select("manga_id, user_id");
+
+    if (bookmarksError) {
+      console.warn("⚠️ Failed to fetch bookmarks from DB:", bookmarksError.message);
+    }
+
+    // 4. Fetch reading progress to aggregate unique user views
+    const { data: progressData, error: progressError } = await supabaseAdmin
+      .from("reading_progress")
+      .select("manga_id, user_id");
+
+    if (progressError) {
+      console.warn("⚠️ Failed to fetch reading progress from DB:", progressError.message);
+    }
+
+    // Aggregate bookmarks
+    const bookmarkCounts: Record<string, number> = {};
+    if (bookmarksData) {
+      bookmarksData.forEach((b: any) => {
+        if (b.manga_id) {
+          bookmarkCounts[b.manga_id] = (bookmarkCounts[b.manga_id] || 0) + 1;
+        }
+      });
+    }
+
+    // Aggregate unique readers (views)
+    const progressUsers: Record<string, Set<string>> = {};
+    if (progressData) {
+      progressData.forEach((p: any) => {
+        if (p.manga_id && p.user_id) {
+          if (!progressUsers[p.manga_id]) {
+            progressUsers[p.manga_id] = new Set();
+          }
+          progressUsers[p.manga_id].add(p.user_id);
+        }
+      });
+    }
+
+    // 5. Map database rows to the client-side Manga interface
     const mappedMangas = mangasData.map((m: any) => {
       const mangaChapters = (chaptersData || [])
         .filter((ch: any) => ch.manga_id === m.id)
@@ -50,7 +90,7 @@ export async function GET() {
         ? new Date(Math.max(...mangaChapters.map(c => new Date(c.created_at).getTime()))).toISOString()
         : m.created_at;
 
-      // Parse views (e.g., "5.5M" -> 5500000) for internal ranking
+      // Parse views (e.g., "5.5M" -> 5500000) for internal ranking fallback
       const parseViews = (v: string) => {
         if (!v) return 0;
         const clean = v.toUpperCase();
@@ -58,6 +98,9 @@ export async function GET() {
         if (clean.endsWith('K')) return parseFloat(clean) * 1000;
         return parseFloat(clean) || 0;
       };
+
+      const realViews = progressUsers[m.id]?.size || 0;
+      const realBookmarks = bookmarkCounts[m.id] || 0;
 
       return {
         id: m.id,
@@ -74,9 +117,11 @@ export async function GET() {
         type: m.manga_type || "Manhwa",
         year: m.release_year || null,
         views: m.views_count || "0",
-        numericViews: parseViews(m.views_count), // Used for ranking
+        numericViews: parseViews(m.views_count), // Used for ranking fallback
         lastUpdate, // Used for sorting new updates
-        chapters: mangaChapters
+        chapters: mangaChapters,
+        realViews,
+        realBookmarks
       };
     });
 

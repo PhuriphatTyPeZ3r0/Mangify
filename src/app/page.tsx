@@ -44,6 +44,9 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [favoriteGenres, setFavoriteGenres] = useState<string[]>([]);
+  const [isGenreModalOpen, setIsGenreModalOpen] = useState(false);
+  const [tempSelectedGenres, setTempSelectedGenres] = useState<string[]>([]);
 
   // --- Reader State ---
   const [isReaderOpen, setIsReaderOpen] = useState(false);
@@ -430,12 +433,45 @@ export default function Home() {
     return true; // ranking or others
   });
 
-  // --- Real Ranking Analysis ---
-  // 1. Hot Ranking: Formula = (Views * 0.7) + (Popularity/Followers * 0.3)
+  // --- Real Ranking Analysis & Recommendation Helper Functions ---
+  const getMangaScore = (m: Manga) => {
+    const hasRealInteractions = (m.realViews || 0) > 0 || (m.realBookmarks || 0) > 0;
+    if (hasRealInteractions) {
+      return (m.realViews || 0) * 0.7 + (m.realBookmarks || 0) * 0.3;
+    }
+    return (m.numericViews || 0) * 0.7 + (m.popularity || 0) * 0.3;
+  };
+
+  const getRecommendedMangas = () => {
+    if (!favoriteGenres || favoriteGenres.length === 0) {
+      // Fallback: Top 10 most popular overall
+      return [...mangas].sort((a, b) => getMangaScore(b) - getMangaScore(a)).slice(0, 10);
+    }
+    // Filter mangas matching favorite genres
+    const matched = mangas.filter(m => 
+      m.genres?.some(g => favoriteGenres.includes(g))
+    );
+    if (matched.length === 0) {
+      return [...mangas].sort((a, b) => getMangaScore(b) - getMangaScore(a)).slice(0, 10);
+    }
+    return matched.sort((a, b) => getMangaScore(b) - getMangaScore(a)).slice(0, 10);
+  };
+
+  const handleSaveGenres = (selected: string[]) => {
+    setFavoriteGenres(selected);
+    localStorage.setItem("mangify-favorite-genres", JSON.stringify(selected));
+    localStorage.removeItem("mangify-favorite-genres-skipped");
+    setIsGenreModalOpen(false);
+  };
+
+  const handleSkipGenres = () => {
+    localStorage.setItem("mangify-favorite-genres-skipped", "true");
+    setIsGenreModalOpen(false);
+  };
+
+  // 1. Hot Ranking: Formula using getMangaScore
   const sortedByRanking = [...mangas].sort((a: any, b: any) => {
-    const scoreA = (a.numericViews || 0) * 0.7 + (a.popularity || 0) * 0.3;
-    const scoreB = (b.numericViews || 0) * 0.7 + (b.popularity || 0) * 0.3;
-    return scoreB - scoreA;
+    return getMangaScore(b) - getMangaScore(a);
   });
 
   // 2. New Updates: Sort by latest chapter date
@@ -446,11 +482,7 @@ export default function Home() {
   // Apply sorting for other tabs
   if (activeTab === "ranking") {
     if (sortBy === "popular") {
-      filteredMangas.sort((a: any, b: any) => {
-        const scoreA = (a.numericViews || 0) * 0.7 + (a.popularity || 0) * 0.3;
-        const scoreB = (b.numericViews || 0) * 0.7 + (b.popularity || 0) * 0.3;
-        return scoreB - scoreA;
-      });
+      filteredMangas.sort((a: any, b: any) => getMangaScore(b) - getMangaScore(a));
     } else {
       filteredMangas.sort((a, b) => a.title.localeCompare(b.title));
     }
@@ -564,8 +596,24 @@ export default function Home() {
     if (savedTheme) applyTheme(savedTheme);
     else applyTheme("light");
 
+    // Favorite genres initialization
+    const savedFavGenres = localStorage.getItem("mangify-favorite-genres");
+    const favGenresSkipped = localStorage.getItem("mangify-favorite-genres-skipped");
+    if (savedFavGenres) {
+      setFavoriteGenres(JSON.parse(savedFavGenres));
+    } else if (!favGenresSkipped) {
+      setIsGenreModalOpen(true);
+    }
+
     return () => subscription.unsubscribe();
   }, []);
+
+  // Sync tempSelectedGenres when Favorite Genres Modal opens
+  useEffect(() => {
+    if (isGenreModalOpen) {
+      setTempSelectedGenres(favoriteGenres);
+    }
+  }, [isGenreModalOpen, favoriteGenres]);
 
   // --- Render ---
   return (
@@ -598,27 +646,36 @@ export default function Home() {
           />
         ) : (
           <>
-            {/* Quick Resume Section */}
-            <QuickResumeBanner 
-              history={history}
-              mangas={mangas}
-              onLaunchReader={handleLaunchReader}
-            />
-
             {activeTab === "originals" ? (
               <div className="space-y-16">
-                {/* 1. Hot Ranking Section */}
+                {/* Quick Resume Section - Moved here to show only on Home (originals tab) */}
+                <QuickResumeBanner 
+                  history={history}
+                  mangas={mangas}
+                  onLaunchReader={handleLaunchReader}
+                />
+
+                {/* 1. Recommended for You Section */}
                 <section>
                   <LibraryGrid 
-                    activeTab="ranking"
+                    activeTab="originals"
                     selectedGenre={null}
                     sortBy="popular"
-                    filteredMangas={sortedByRanking.slice(0, 10)}
+                    filteredMangas={getRecommendedMangas()}
                     bookmarks={bookmarks}
                     allMangas={mangas}
                     onSelectManga={handleSelectManga}
                     onToggleBookmark={handleToggleBookmark}
                     onTabChange={handleTabChange}
+                    headerExtra={
+                      <button 
+                        onClick={() => setIsGenreModalOpen(true)}
+                        className="text-xs prompt-semibold flex items-center gap-1 bg-accent/10 text-accent hover:bg-accent hover:text-white px-3 py-1.5 rounded-full transition-all cursor-pointer shadow-sm"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">edit</span>
+                        ปรับแต่งหมวดหมู่
+                      </button>
+                    }
                   />
                 </section>
 
@@ -796,13 +853,165 @@ export default function Home() {
                   </div>
                 )}
 
+                {/* Premium Top Tier 1 - 3 Podium Section */}
+                {activeTab === "ranking" && sortBy === "popular" && filteredMangas.length >= 3 && (
+                  <div className="mb-12 animate-in fade-in slide-in-from-bottom-6 duration-500">
+                    {/* Podium layout for md and larger, simple list/cards for mobile */}
+                    <div className="hidden md:flex items-end justify-center gap-6 lg:gap-8 max-w-5xl mx-auto pt-6 pb-2">
+                      
+                      {/* Rank 2 (Silver) */}
+                      {(() => {
+                        const m = filteredMangas[1];
+                        return (
+                          <div 
+                            onClick={() => handleSelectManga(m)}
+                            className="flex-1 max-w-[280px] bg-surface/80 backdrop-blur-sm border border-border/60 hover:border-[#A0A0A0] rounded-2xl p-5 flex flex-col items-center text-center transition-all duration-300 hover:-translate-y-2 hover:shadow-xl cursor-pointer group relative"
+                          >
+                            <div className="absolute -top-5 left-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-gradient-to-br from-[#E2E2E2] to-[#B0B0B0] text-black flex items-center justify-center font-bold text-lg border-2 border-background shadow-md">
+                              2
+                            </div>
+                            <div className="w-32 aspect-[2/3] rounded-xl overflow-hidden shadow-md border border-border/20 mb-4 mt-2 relative">
+                              <img src={m.cover} alt={m.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                            </div>
+                            <h3 className="prompt-bold text-sm line-clamp-1 group-hover:text-accent transition-colors">
+                              {m.title}
+                            </h3>
+                            <p className="prompt-light text-xs opacity-60 mt-0.5">{m.author}</p>
+                            <div className="flex items-center gap-3 mt-3 px-3 py-1.5 bg-border/20 rounded-full text-[11px] prompt-medium opacity-90">
+                              <span className="flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px] text-[#A0A0A0]">visibility</span>
+                                {m.realViews || 0}
+                              </span>
+                              <span className="w-px h-3 bg-border" />
+                              <span className="flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px] text-accent">bookmark</span>
+                                {m.realBookmarks || 0}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Rank 1 (Gold) */}
+                      {(() => {
+                        const m = filteredMangas[0];
+                        return (
+                          <div 
+                            onClick={() => handleSelectManga(m)}
+                            className="flex-1 max-w-[300px] bg-surface border-2 border-[#FFD700] hover:border-[#FFD700]/80 rounded-2xl p-6 flex flex-col items-center text-center transition-all duration-300 hover:-translate-y-3 hover:shadow-2xl hover:shadow-[#FFD700]/10 cursor-pointer group relative scale-105 z-10"
+                          >
+                            <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex flex-col items-center">
+                              <span className="material-symbols-outlined text-[#FFD700] text-[28px] drop-shadow animate-bounce">crown</span>
+                              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#FFE033] to-[#FFB900] text-black flex items-center justify-center font-bold text-xl border-2 border-background shadow-lg -mt-1.5">
+                                1
+                              </div>
+                            </div>
+                            <div className="w-36 aspect-[2/3] rounded-xl overflow-hidden shadow-lg border border-border/20 mb-4 mt-4 relative">
+                              <img src={m.cover} alt={m.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                            </div>
+                            <h3 className="prompt-bold text-base line-clamp-1 group-hover:text-accent transition-colors">
+                              {m.title}
+                            </h3>
+                            <p className="prompt-light text-xs opacity-60 mt-0.5">{m.author}</p>
+                            <div className="flex items-center gap-3 mt-3 px-4 py-2 bg-[#FFD700]/10 border border-[#FFD700]/20 rounded-full text-xs prompt-semibold text-foreground/90">
+                              <span className="flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px] text-[#FFD700] fill">visibility</span>
+                                {m.realViews || 0}
+                              </span>
+                              <span className="w-px h-3 bg-[#FFD700]/20" />
+                              <span className="flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px] text-accent fill">bookmark</span>
+                                {m.realBookmarks || 0}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Rank 3 (Bronze) */}
+                      {(() => {
+                        const m = filteredMangas[2];
+                        return (
+                          <div 
+                            onClick={() => handleSelectManga(m)}
+                            className="flex-1 max-w-[280px] bg-surface/80 backdrop-blur-sm border border-border/60 hover:border-[#CD7F32] rounded-2xl p-5 flex flex-col items-center text-center transition-all duration-300 hover:-translate-y-2 hover:shadow-xl cursor-pointer group relative"
+                          >
+                            <div className="absolute -top-5 left-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-gradient-to-br from-[#D27D2D] to-[#995511] text-white flex items-center justify-center font-bold text-lg border-2 border-background shadow-md">
+                              3
+                            </div>
+                            <div className="w-32 aspect-[2/3] rounded-xl overflow-hidden shadow-md border border-border/20 mb-4 mt-2 relative">
+                              <img src={m.cover} alt={m.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                            </div>
+                            <h3 className="prompt-bold text-sm line-clamp-1 group-hover:text-accent transition-colors">
+                              {m.title}
+                            </h3>
+                            <p className="prompt-light text-xs opacity-60 mt-0.5">{m.author}</p>
+                            <div className="flex items-center gap-3 mt-3 px-3 py-1.5 bg-border/20 rounded-full text-[11px] prompt-medium opacity-90">
+                              <span className="flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px] text-[#CD7F32]">visibility</span>
+                                {m.realViews || 0}
+                              </span>
+                              <span className="w-px h-3 bg-border" />
+                              <span className="flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px] text-accent">bookmark</span>
+                                {m.realBookmarks || 0}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                    </div>
+
+                    {/* Mobile list view for Top 3 */}
+                    <div className="flex flex-col gap-4 md:hidden">
+                      {filteredMangas.slice(0, 3).map((m, idx) => {
+                        const colors = [
+                          { bg: "bg-[#FFD700]/10", border: "border-[#FFD700]", text: "text-[#FFD700]", label: "1" },
+                          { bg: "bg-surface", border: "border-border/80", text: "text-[#A0A0A0]", label: "2" },
+                          { bg: "bg-surface", border: "border-border/80", text: "text-[#CD7F32]", label: "3" },
+                        ][idx];
+                        return (
+                          <div 
+                            key={m.id}
+                            onClick={() => handleSelectManga(m)}
+                            className={`flex items-center gap-4 p-4 rounded-xl border ${colors.border} ${colors.bg} cursor-pointer group`}
+                          >
+                            <div className={`w-8 h-8 rounded-full ${colors.text} flex items-center justify-center font-bold text-base border border-current shadow-sm`}>
+                              {colors.label}
+                            </div>
+                            <div className="w-12 aspect-[2/3] rounded overflow-hidden border border-border/20 relative">
+                              <img src={m.cover} alt={m.title} className="w-full h-full object-cover" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="prompt-bold text-sm truncate group-hover:text-accent transition-colors">{m.title}</h3>
+                              <p className="prompt-light text-xs opacity-60 mt-0.5">{m.author}</p>
+                              <div className="flex items-center gap-3 mt-1.5 text-[10px] prompt-medium opacity-80">
+                                <span className="flex items-center gap-0.5">
+                                  <span className="material-symbols-outlined text-[12px] opacity-75">visibility</span>
+                                  {m.realViews || 0}
+                                </span>
+                                <span className="flex items-center gap-0.5">
+                                  <span className="material-symbols-outlined text-[12px] text-accent">bookmark</span>
+                                  {m.realBookmarks || 0}
+                                </span>
+                              </div>
+                            </div>
+                            <span className="material-symbols-outlined text-[20px] opacity-40 group-hover:opacity-100 transition-opacity">chevron_right</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <LibraryGrid 
                   activeTab={activeTab}
                   selectedGenre={selectedGenre}
                   sortBy={sortBy}
-                  filteredMangas={filteredMangas}
+                  filteredMangas={(activeTab === "ranking" && sortBy === "popular") ? filteredMangas.slice(3) : filteredMangas}
                   bookmarks={bookmarks}
-                  allMangas={mangas}
+                  allMangas={filteredMangas}
                   onSelectManga={handleSelectManga}
                   onToggleBookmark={handleToggleBookmark}
                   onTabChange={handleTabChange}
@@ -861,6 +1070,83 @@ export default function Home() {
         error={authError}
         onSubmit={handleAuthSubmit}
       />
+
+      {/* Favorite Genres Modal */}
+      {isGenreModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-300"
+            onClick={handleSkipGenres}
+          />
+          
+          {/* Modal Box */}
+          <div className="relative w-full max-w-xl bg-surface border border-border/80 rounded-2xl shadow-2xl overflow-hidden p-6 md:p-8 animate-in fade-in zoom-in-95 slide-in-from-bottom-10 duration-300 z-10">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="prompt-bold text-xl md:text-2xl text-foreground flex items-center gap-2">
+                  <span className="material-symbols-outlined text-accent text-[28px]">auto_awesome</span>
+                  เลือกหมวดหมู่ที่คุณชื่นชอบ
+                </h3>
+                <p className="prompt-light text-xs opacity-70 mt-1">
+                  เลือกหมวดหมู่มังงะที่คุณสนใจอย่างน้อย 1-3 หมวดหมู่ เพื่อให้เราสามารถแนะนำเรื่องที่ใช่สำหรับคุณได้ดียิ่งขึ้น
+                </p>
+              </div>
+              <button 
+                onClick={handleSkipGenres}
+                className="p-1.5 rounded-full hover:bg-border/40 transition-colors opacity-70 hover:opacity-100 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            {/* Genre Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto pr-1 mb-8 custom-scrollbar">
+              {allGenres.map(genre => {
+                const isSelected = tempSelectedGenres.includes(genre);
+                return (
+                  <button
+                    key={genre}
+                    onClick={() => {
+                      setTempSelectedGenres(prev => 
+                        prev.includes(genre) ? prev.filter(g => g !== genre) : [...prev, genre]
+                      );
+                    }}
+                    className={`px-4 py-3 rounded-xl text-xs prompt-semibold border transition-all flex items-center justify-between cursor-pointer ${
+                      isSelected 
+                        ? "bg-accent/10 border-accent text-accent shadow-sm" 
+                        : "bg-surface border-border/60 text-foreground opacity-75 hover:opacity-100 hover:border-border"
+                    }`}
+                  >
+                    <span>{genre}</span>
+                    {isSelected && (
+                      <span className="material-symbols-outlined text-[14px] text-accent fill animate-in zoom-in duration-200">check_circle</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex items-center justify-end gap-3 border-t border-border/40 pt-5">
+              <button
+                onClick={handleSkipGenres}
+                className="px-5 py-2.5 rounded-xl text-xs prompt-medium text-foreground hover:bg-border/20 transition-all cursor-pointer"
+              >
+                ข้ามไปก่อน
+              </button>
+              <button
+                onClick={() => handleSaveGenres(tempSelectedGenres)}
+                disabled={tempSelectedGenres.length === 0}
+                className="px-6 py-2.5 rounded-xl text-xs prompt-bold bg-accent text-white hover:bg-accent/90 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-accent/20"
+              >
+                <span className="material-symbols-outlined text-[16px]">save</span>
+                บันทึกความชอบ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -11,6 +11,7 @@ interface LibraryGridProps {
   onSelectManga: (manga: Manga) => void;
   onToggleBookmark: (e: React.MouseEvent, mangaId: string) => void;
   onTabChange: (tab: string) => void;
+  headerExtra?: React.ReactNode;
 }
 
 export const LibraryGrid: React.FC<LibraryGridProps> = ({
@@ -23,19 +24,23 @@ export const LibraryGrid: React.FC<LibraryGridProps> = ({
   onSelectManga,
   onToggleBookmark,
   onTabChange,
+  headerExtra,
 }) => {
   return (
     <>
       {/* Dynamic Section Header Title */}
-      <h2 className="prompt-semibold text-xl mb-6 flex items-center gap-2">
-        {activeTab === "originals" && <span className="material-symbols-outlined text-[20px] opacity-70">auto_awesome</span>}
-        {activeTab === "genres" && <span className="material-symbols-outlined text-[20px] opacity-70">filter_list</span>}
-        {activeTab === "ranking" && <span className="material-symbols-outlined text-[20px] opacity-70">trending_up</span>}
-        {activeTab === "bookmarks" && <span className="material-symbols-outlined text-[20px] opacity-70">bookmark</span>}
-        {activeTab === "originals" && "มังงะยอดนิยมแนะนำ"}
-        {activeTab === "genres" && `หมวดหมู่${selectedGenre ? `: ${selectedGenre}` : "ทั้งหมด"}`}
-        {activeTab === "ranking" && "การจัดอันดับมังงะสุดฮิต"}
-        {activeTab === "bookmarks" && "บุ๊กมาร์กของฉัน"}
+      <h2 className="prompt-semibold text-xl mb-6 flex items-center justify-between w-full">
+        <div className="flex items-center gap-2">
+          {activeTab === "originals" && <span className="material-symbols-outlined text-[20px] opacity-70">auto_awesome</span>}
+          {activeTab === "genres" && <span className="material-symbols-outlined text-[20px] opacity-70">filter_list</span>}
+          {activeTab === "ranking" && <span className="material-symbols-outlined text-[20px] opacity-70">trending_up</span>}
+          {activeTab === "bookmarks" && <span className="material-symbols-outlined text-[20px] opacity-70">bookmark</span>}
+          {activeTab === "originals" && "มังงะแนะนำสำหรับคุณ"}
+          {activeTab === "genres" && `หมวดหมู่${selectedGenre ? `: ${selectedGenre}` : "ทั้งหมด"}`}
+          {activeTab === "ranking" && "การจัดอันดับมังงะสุดฮิต"}
+          {activeTab === "bookmarks" && "บุ๊กมาร์กของฉัน"}
+        </div>
+        {headerExtra}
       </h2>
 
       {/* Library Grid */}
