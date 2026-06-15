@@ -149,15 +149,6 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({
                 />
               </div>
             ))}
-            
-            {/* Next Chapter Loading Indicator */}
-            <div className="w-full text-center py-16 border-t border-dashed border-border mt-8 flex flex-col items-center">
-              <span className="prompt-medium text-lg opacity-60">
-                {currentChapterIdx < activeManga.chapters.length - 1 
-                  ? "Scroll to load next chapter"
-                  : "End of Manga"}
-              </span>
-            </div>
           </div>
         ) : (
           /* Horizontal Page Switch Layout */

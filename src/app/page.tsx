@@ -62,6 +62,7 @@ export default function Home() {
   const readerContentRef = useRef<HTMLDivElement>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isTransitioningChapterRef = useRef(false);
 
   // --- Functions (Defined before useEffect to avoid ReferenceError) ---
   
@@ -154,6 +155,7 @@ export default function Home() {
   };
 
   const handleLaunchReader = (manga: Manga, chapterId: string, pageIndex = 0, scrollPct = 0) => {
+    isTransitioningChapterRef.current = true;
     setActiveManga(manga);
     setActiveChapterId(chapterId);
     setCurrentPageIndex(pageIndex);
@@ -162,13 +164,27 @@ export default function Home() {
     resetControlsTimeout();
     
     // Auto-scroll logic if vertical
-    if (readingMode === "vertical" && scrollPct > 0) {
+    if (readingMode === "vertical") {
+      // Instantly try to reset scroll to top to prevent double scroll events
+      if (readerContentRef.current && scrollPct === 0) {
+        readerContentRef.current.scrollTop = 0;
+      }
       setTimeout(() => {
         if (readerContentRef.current) {
-          const totalHeight = readerContentRef.current.scrollHeight;
-          readerContentRef.current.scrollTop = (scrollPct / 100) * totalHeight;
+          if (scrollPct > 0) {
+            const totalHeight = readerContentRef.current.scrollHeight;
+            readerContentRef.current.scrollTop = (scrollPct / 100) * totalHeight;
+          } else {
+            readerContentRef.current.scrollTop = 0;
+          }
         }
+        // Release transitioning lock after DOM has stabilized
+        setTimeout(() => {
+          isTransitioningChapterRef.current = false;
+        }, 50);
       }, 100);
+    } else {
+      isTransitioningChapterRef.current = false;
     }
   };
 
@@ -176,6 +192,7 @@ export default function Home() {
     setIsReaderOpen(false);
     setActiveManga(null);
     setShowControls(true);
+    isTransitioningChapterRef.current = false;
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
   };
 
@@ -188,13 +205,25 @@ export default function Home() {
   };
 
   const handleReaderScroll = () => {
-    if (!readerContentRef.current || readingMode !== "vertical") return;
+    if (!readerContentRef.current || readingMode !== "vertical" || isTransitioningChapterRef.current) return;
     
     const { scrollTop, scrollHeight, clientHeight } = readerContentRef.current;
+    if (scrollHeight <= clientHeight) return;
+
     const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
     setScrollPercent(progress);
     
     debouncedSyncProgress(progress, 0);
+
+    // Auto-load next chapter when scrolled to the very bottom
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 20;
+    if (isAtBottom && activeManga && activeChapterId) {
+      const curIdx = activeManga.chapters.findIndex(c => c.id === activeChapterId);
+      if (curIdx < activeManga.chapters.length - 1) {
+        const nextCh = activeManga.chapters[curIdx + 1];
+        handleLaunchReader(activeManga, nextCh.id, 0, 0);
+      }
+    }
   };
 
   const debouncedSyncProgress = (scroll: number, page: number) => {
