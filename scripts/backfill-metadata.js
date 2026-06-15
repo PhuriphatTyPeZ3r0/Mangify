@@ -54,7 +54,7 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
 
 // Static mapping table for Supabase ID -> up-manga.com URL slug
 const slugMap = {
-  "webtoon-character-kang-lim": "webtoon-character-na-kang-lim"
+  // Empty for now as no ID-to-slug discrepancies exist
 };
 
 const getSlugFromId = (id) => {
