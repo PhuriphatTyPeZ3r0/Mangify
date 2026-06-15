@@ -53,15 +53,37 @@ export async function GET() {
       return NextResponse.json({ mangas: [] });
     }
 
-    // 2. Fetch all chapters using supabaseAdmin
-    const { data: chaptersData, error: chaptersError } = await supabaseAdmin
-      .from("chapters")
-      .select("*")
-      .order("created_at", { ascending: true });
+    // 2. Fetch all chapters using pagination to bypass 1000 row limit
+    let chaptersData: any[] = [];
+    let fetchMoreChapters = true;
+    let chapterOffset = 0;
+    const CHAPTER_PAGE_SIZE = 1000;
 
-    if (chaptersError) {
-      console.warn("⚠️ Failed to fetch chapters from DB:", chaptersError.message);
-      return NextResponse.json({ mangas: [] });
+    while (fetchMoreChapters) {
+      const { data: pageData, error: chaptersError } = await supabaseAdmin
+        .from("chapters")
+        .select("*")
+        .order("created_at", { ascending: true })
+        .range(chapterOffset, chapterOffset + CHAPTER_PAGE_SIZE - 1);
+
+      if (chaptersError) {
+        console.warn("⚠️ Failed to fetch chapters from DB:", chaptersError.message);
+        fetchMoreChapters = false;
+        break;
+      }
+
+      if (pageData && pageData.length > 0) {
+        chaptersData = [...chaptersData, ...pageData];
+        chapterOffset += CHAPTER_PAGE_SIZE;
+        if (pageData.length < CHAPTER_PAGE_SIZE) {
+          fetchMoreChapters = false;
+        }
+      } else {
+        fetchMoreChapters = false;
+      }
+      
+      // Safety break to prevent infinite loop
+      if (chapterOffset > 50000) break;
     }
 
     // 3. Fetch bookmarks counts to aggregate

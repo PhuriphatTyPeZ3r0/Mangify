@@ -235,7 +235,7 @@ async function scrape() {
           .map(a => a.textContent.trim())
           .filter(Boolean);
         
-        const chapters = Array.from(document.querySelectorAll('.bxcl ul li a, .cl ul li a'))
+        const chapters = Array.from(document.querySelectorAll('.bxcl ul li a, .cl ul li a, .chapter-list ul li a, .listing-chapters ul li a'))
           .map(a => ({
             id: a.href.split('/').filter(Boolean).pop(),
             title: a.textContent?.trim() || "",
