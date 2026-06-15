@@ -37,8 +37,23 @@ const cleanEnvVar = (val) => {
   return val.replace(/^['"]|['"]$/g, "").trim();
 };
 
-const NEXT_PUBLIC_SUPABASE_URL_CLEAN = cleanEnvVar(process.env.NEXT_PUBLIC_SUPABASE_URL);
+let NEXT_PUBLIC_SUPABASE_URL_CLEAN = cleanEnvVar(process.env.NEXT_PUBLIC_SUPABASE_URL);
 const SUPABASE_SERVICE_ROLE_KEY_CLEAN = cleanEnvVar(process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+if (!NEXT_PUBLIC_SUPABASE_URL_CLEAN) {
+  console.error("❌ Error: NEXT_PUBLIC_SUPABASE_URL is missing.");
+  process.exit(1);
+}
+
+// Auto-prepend https:// if protocol is missing
+if (!NEXT_PUBLIC_SUPABASE_URL_CLEAN.startsWith("http://") && !NEXT_PUBLIC_SUPABASE_URL_CLEAN.startsWith("https://")) {
+  console.log(`ℹ️ Info: NEXT_PUBLIC_SUPABASE_URL does not start with http/https. Auto-prepending https://`);
+  NEXT_PUBLIC_SUPABASE_URL_CLEAN = "https://" + NEXT_PUBLIC_SUPABASE_URL_CLEAN;
+}
+
+// Safe diagnostic log to verify URL format without leaking sensitive project IDs
+const safeUrlPrefix = NEXT_PUBLIC_SUPABASE_URL_CLEAN.substring(0, 12);
+console.log(`🔍 Diagnostic: Parsed NEXT_PUBLIC_SUPABASE_URL length = ${NEXT_PUBLIC_SUPABASE_URL_CLEAN.length}, prefix = "${safeUrlPrefix}..."`);
 
 if (NEXT_PUBLIC_SUPABASE_URL_CLEAN.includes("placeholder") || NEXT_PUBLIC_SUPABASE_URL_CLEAN.includes("your-supabase")) {
   console.error("❌ Error: NEXT_PUBLIC_SUPABASE_URL is configured with a placeholder value. Please check your GitHub secrets.");

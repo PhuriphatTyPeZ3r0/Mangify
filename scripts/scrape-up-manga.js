@@ -27,7 +27,7 @@ const cleanEnvVar = (val) => {
   return val.replace(/^['"]|['"]$/g, "").trim();
 };
 
-const supabaseUrl = cleanEnvVar(envVars["NEXT_PUBLIC_SUPABASE_URL"]);
+let supabaseUrl = cleanEnvVar(envVars["NEXT_PUBLIC_SUPABASE_URL"]);
 const serviceRoleKey = cleanEnvVar(envVars["SUPABASE_SERVICE_ROLE_KEY"]);
 const resendApiKey = cleanEnvVar(envVars["RESEND_API_KEY"]);
 
@@ -35,6 +35,16 @@ if (!supabaseUrl || !serviceRoleKey) {
   console.error("❌ Error: Missing Supabase credentials (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY).");
   process.exit(1);
 }
+
+// Auto-prepend https:// if protocol is missing
+if (!supabaseUrl.startsWith("http://") && !supabaseUrl.startsWith("https://")) {
+  console.log(`ℹ️ Info: NEXT_PUBLIC_SUPABASE_URL does not start with http/https. Auto-prepending https://`);
+  supabaseUrl = "https://" + supabaseUrl;
+}
+
+// Safe diagnostic log to verify URL format without leaking sensitive project IDs
+const safeUrlPrefix = supabaseUrl.substring(0, 12);
+console.log(`🔍 Diagnostic: Parsed NEXT_PUBLIC_SUPABASE_URL length = ${supabaseUrl.length}, prefix = "${safeUrlPrefix}..."`);
 
 if (supabaseUrl.includes("placeholder") || supabaseUrl.includes("your-supabase")) {
   console.error("❌ Error: NEXT_PUBLIC_SUPABASE_URL is configured with a placeholder value. Please check your .env.local or GitHub secrets.");
