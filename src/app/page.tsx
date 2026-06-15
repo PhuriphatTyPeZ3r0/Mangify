@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 /* Imported Google Material Symbols via layout.tsx */
 import { demoManga as initialManga } from "../data/mangaData";
 import { Manga, Theme, ReadingMode, ReadingProgress } from "../types";
@@ -47,6 +48,7 @@ export default function Home() {
   const [favoriteGenres, setFavoriteGenres] = useState<string[]>([]);
   const [isGenreModalOpen, setIsGenreModalOpen] = useState(false);
   const [tempSelectedGenres, setTempSelectedGenres] = useState<string[]>([]);
+  const [mounted, setMounted] = useState(false);
 
   // --- Reader State ---
   const [isReaderOpen, setIsReaderOpen] = useState(false);
@@ -605,6 +607,8 @@ export default function Home() {
       setIsGenreModalOpen(true);
     }
 
+    setMounted(true);
+
     return () => subscription.unsubscribe();
   }, []);
 
@@ -614,6 +618,11 @@ export default function Home() {
       setTempSelectedGenres(favoriteGenres);
     }
   }, [isGenreModalOpen, favoriteGenres]);
+
+  const renderPortal = (content: React.ReactNode) => {
+    if (!mounted || typeof window === "undefined") return null;
+    return createPortal(content, document.body);
+  };
 
   // --- Render ---
   return (
@@ -1023,7 +1032,7 @@ export default function Home() {
       </main>
 
       {/* Manga Details Modal */}
-      {selectedMangaInfo && (
+      {selectedMangaInfo && renderPortal(
         <MangaInfoModal 
           manga={selectedMangaInfo}
           onClose={() => handleSelectManga(null)}
@@ -1035,7 +1044,7 @@ export default function Home() {
       )}
 
       {/* Reader View Overlay */}
-      {isReaderOpen && activeManga && (
+      {isReaderOpen && activeManga && renderPortal(
         <ReaderOverlay 
           activeManga={activeManga}
           activeChapterId={activeChapterId}
@@ -1057,22 +1066,24 @@ export default function Home() {
       )}
 
       {/* Auth Modal */}
-      <AuthModal 
-        isOpen={isAuthModalOpen}
-        mode={authMode}
-        onClose={() => setIsAuthModalOpen(false)}
-        onSetMode={setAuthMode}
-        email={authEmail}
-        onEmailChange={setAuthEmail}
-        password={authPassword}
-        onPasswordChange={setAuthPassword}
-        loading={authLoading}
-        error={authError}
-        onSubmit={handleAuthSubmit}
-      />
+      {renderPortal(
+        <AuthModal 
+          isOpen={isAuthModalOpen}
+          mode={authMode}
+          onClose={() => setIsAuthModalOpen(false)}
+          onSetMode={setAuthMode}
+          email={authEmail}
+          onEmailChange={setAuthEmail}
+          password={authPassword}
+          onPasswordChange={setAuthPassword}
+          loading={authLoading}
+          error={authError}
+          onSubmit={handleAuthSubmit}
+        />
+      )}
 
       {/* Favorite Genres Modal */}
-      {isGenreModalOpen && (
+      {isGenreModalOpen && renderPortal(
         <div 
           className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1800] flex items-center justify-center p-4 animate-in fade-in duration-200"
           onClick={handleSkipGenres}
