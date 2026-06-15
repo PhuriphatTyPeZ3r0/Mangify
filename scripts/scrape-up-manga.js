@@ -151,7 +151,54 @@ async function scrape() {
         const title = titleTag?.textContent?.trim() || "";
         const description = document.querySelector('.entry-content, .info-desc, .summary-content')?.textContent?.trim() || "";
         const cover = document.querySelector('.thumb img')?.src || document.querySelector('.summary_image img')?.src || "";
-        const author = document.querySelector('.spe span:nth-child(2)')?.textContent?.replace('Author:', '').trim() || "";
+        
+        // Extract from Info Table
+        const infoRows = Array.from(document.querySelectorAll('.infotable tr'));
+        let status = "Ongoing";
+        let type = "Manhwa";
+        let releaseYear = null;
+        let author = "";
+        let artist = "";
+        let viewsCount = "0";
+
+        infoRows.forEach(row => {
+          const cells = row.querySelectorAll('td');
+          if (cells.length === 2) {
+            const label = cells[0].textContent.trim();
+            const value = cells[1].textContent.trim();
+
+            if (label.includes("สถานะ")) {
+              status = value;
+            } else if (label.includes("ประเภท")) {
+              type = value;
+            } else if (label.includes("ปีที่ปล่อย")) {
+              const yearNum = parseInt(value, 10);
+              if (!isNaN(yearNum)) releaseYear = yearNum;
+            } else if (label.includes("ผู้แต่ง")) {
+              author = value;
+            } else if (label.includes("ผู้เขียน")) {
+              artist = value;
+            } else if (label.includes("Views")) {
+              viewsCount = value;
+            }
+          }
+        });
+
+        // Fallback for author if not found in table
+        if (!author) {
+          author = document.querySelector('.spe span:nth-child(2)')?.textContent?.replace('Author:', '').trim() || "";
+        }
+
+        // Extract Alternative Title
+        const originalTitle = document.querySelector('.seriestualt')?.textContent?.trim() || "";
+
+        // Extract Followers Count
+        const followersText = document.querySelector('.bmc')?.textContent || "";
+
+        // Extract Genres
+        const genres = Array.from(document.querySelectorAll('.seriestugenre a'))
+          .map(a => a.textContent.trim())
+          .filter(Boolean);
         
         const chapters = Array.from(document.querySelectorAll('.bxcl ul li a, .cl ul li a'))
           .map(a => ({
@@ -161,7 +208,7 @@ async function scrape() {
           }));
 
         const id = url.split('/').filter(Boolean).pop();
-        return { id, title, description, cover, author, chapters };
+        return { id, title, description, cover, author, artist, status, type, releaseYear, viewsCount, originalTitle, genres, followersText, chapters };
       }, mangaUrl);
 
       if (!mangaData.id || !mangaData.title) {
@@ -172,13 +219,45 @@ async function scrape() {
       stats.mangasProcessed++;
       console.log(`✅ Extracted: ${mangaData.title} (${mangaData.chapters.length} chapters)`);
 
+      // Popularity score calculation helper functions
+      const parseViews = (viewsStr) => {
+        if (!viewsStr) return 0;
+        const cleanStr = viewsStr.trim().toLowerCase();
+        if (cleanStr.includes('m')) {
+          return parseFloat(cleanStr.replace('m', '')) * 1000000;
+        }
+        if (cleanStr.includes('k')) {
+          return parseFloat(cleanStr.replace('k', '')) * 1000;
+        }
+        return parseInt(cleanStr.replace(/\D/g, ""), 10) || 0;
+      };
+
+      const parseFollowers = (followersStr) => {
+        if (!followersStr) return 0;
+        return parseInt(followersStr.replace(/\D/g, ""), 10) || 0;
+      };
+
+      const rawViews = parseViews(mangaData.viewsCount);
+      const rawFollowers = parseFollowers(mangaData.followersText);
+      const popularityScore = Math.round((rawViews * 0.7) + (rawFollowers * 0.3));
+
+      console.log(`   └─ 📈 Stats: Views = ${rawViews.toLocaleString()} (${mangaData.viewsCount}), Followers = ${rawFollowers.toLocaleString()}, Popularity Score = ${popularityScore}`);
+
       await supabaseAdmin.from("manga").upsert({
         id: mangaData.id,
         title: mangaData.title,
-        author: mangaData.author,
-        cover: mangaData.cover,
-        description: mangaData.description,
-        is_original: true
+        author: mangaData.author || null,
+        cover: mangaData.cover || null,
+        description: mangaData.description || null,
+        genres: mangaData.genres || [],
+        is_original: true,
+        popularity: popularityScore,
+        original_title: mangaData.originalTitle || null,
+        artist: mangaData.artist || null,
+        status: mangaData.status || 'Ongoing',
+        manga_type: mangaData.type || 'Manhwa',
+        release_year: mangaData.releaseYear || null,
+        views_count: mangaData.viewsCount || '0'
       });
 
       const chaptersToSync = mangaData.chapters.reverse();
