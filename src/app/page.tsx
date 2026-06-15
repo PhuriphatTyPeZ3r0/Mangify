@@ -1073,15 +1073,15 @@ export default function Home() {
 
       {/* Favorite Genres Modal */}
       {isGenreModalOpen && (
-        <div className="fixed inset-0 z-[1600] flex items-center justify-center p-4 animate-in fade-in duration-200">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-300"
-            onClick={handleSkipGenres}
-          />
-          
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1800] flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={handleSkipGenres}
+        >
           {/* Modal Box */}
-          <div className="relative w-full max-w-xl bg-surface border border-border/80 rounded-2xl shadow-2xl overflow-hidden p-6 md:p-8 animate-in fade-in zoom-in-95 slide-in-from-bottom-10 duration-300 z-10">
+          <div 
+            className="relative w-full max-w-xl bg-surface border border-border/80 rounded-2xl shadow-2xl overflow-hidden p-6 md:p-8 animate-in fade-in zoom-in-95 slide-in-from-bottom-10 duration-300 z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-start mb-6">
               <div>
                 <h3 className="prompt-bold text-xl md:text-2xl text-foreground flex items-center gap-2">
