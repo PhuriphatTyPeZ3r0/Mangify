@@ -41,6 +41,27 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({
   const currentChapter = activeManga.chapters.find(ch => ch.id === activeChapterId);
   const currentChapterIdx = activeManga.chapters.findIndex(ch => ch.id === activeChapterId);
 
+  // Track finger movement to separate scrolling/swiping from clean tapping
+  const touchMovedRef = React.useRef(false);
+
+  const handleTouchStart = () => {
+    touchMovedRef.current = false;
+  };
+
+  const handleTouchMove = () => {
+    touchMovedRef.current = true;
+  };
+
+  const handleClick = () => {
+    if (touchMovedRef.current) {
+      touchMovedRef.current = false;
+      return;
+    }
+    if (readingMode === "vertical") {
+      onToggleControls();
+    }
+  };
+
   return (
     <div className="fixed inset-0 w-full h-full bg-background z-[1000] flex flex-col select-none overflow-hidden transition-colors">
       
@@ -51,7 +72,7 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({
         <div className="flex items-center gap-4">
           <button 
             onClick={onClose}
-            className="flex items-center gap-1 prompt-medium text-sm hover:translate-x-[-3px] transition-transform flex items-center"
+            className="flex items-center gap-1 prompt-medium text-sm hover:translate-x-[-3px] transition-transform flex items-center cursor-pointer"
           >
             <span className="material-symbols-outlined text-[20px]">chevron_left</span>
             Library
@@ -72,11 +93,9 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({
       <div 
         ref={readerContentRef}
         onScroll={onReaderScroll}
-        onClick={() => {
-          if (readingMode === "vertical") {
-            onToggleControls();
-          }
-        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onClick={handleClick}
         className="flex-1 w-full overflow-x-hidden relative flex flex-col items-center justify-start focus:outline-none"
         style={{ 
           overflowY: readingMode === "vertical" ? "auto" : "hidden" 
@@ -93,8 +112,14 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({
               className="w-[20%] h-full cursor-w-resize pointer-events-auto"
             />
             <div 
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
               onClick={(e) => {
                 e.stopPropagation();
+                if (touchMovedRef.current) {
+                  touchMovedRef.current = false;
+                  return;
+                }
                 onToggleControls();
               }}
               className="w-[60%] h-full cursor-pointer pointer-events-auto"
@@ -170,7 +195,7 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({
               onSetReadingMode(readingMode === "vertical" ? "horizontal" : "vertical");
               resetControlsTimeout();
             }}
-            className="bg-surface border border-border text-foreground text-xs prompt-medium px-4 py-1.5 rounded-full hover:border-accent transition-colors"
+            className="bg-surface border border-border text-foreground text-xs prompt-medium px-4 py-1.5 rounded-full hover:border-accent transition-colors cursor-pointer"
           >
             {readingMode === "vertical" ? "Webtoon (Vertical)" : "Manga (Horizontal)"}
           </button>

@@ -21,12 +21,28 @@ if (fs.existsSync(envPath)) {
   });
 }
 
-const supabaseUrl = envVars["NEXT_PUBLIC_SUPABASE_URL"];
-const serviceRoleKey = envVars["SUPABASE_SERVICE_ROLE_KEY"];
-const resendApiKey = envVars["RESEND_API_KEY"];
+const cleanEnvVar = (val) => {
+  if (!val) return "";
+  // Strip surrounding quotes (double or single) and trim whitespace/newlines
+  return val.replace(/^['"]|['"]$/g, "").trim();
+};
+
+const supabaseUrl = cleanEnvVar(envVars["NEXT_PUBLIC_SUPABASE_URL"]);
+const serviceRoleKey = cleanEnvVar(envVars["SUPABASE_SERVICE_ROLE_KEY"]);
+const resendApiKey = cleanEnvVar(envVars["RESEND_API_KEY"]);
 
 if (!supabaseUrl || !serviceRoleKey) {
-  console.error("Missing Supabase credentials");
+  console.error("❌ Error: Missing Supabase credentials (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY).");
+  process.exit(1);
+}
+
+if (supabaseUrl.includes("placeholder") || supabaseUrl.includes("your-supabase")) {
+  console.error("❌ Error: NEXT_PUBLIC_SUPABASE_URL is configured with a placeholder value. Please check your .env.local or GitHub secrets.");
+  process.exit(1);
+}
+
+if (!supabaseUrl.startsWith("http://") && !supabaseUrl.startsWith("https://")) {
+  console.error(`❌ Error: NEXT_PUBLIC_SUPABASE_URL ("${supabaseUrl}") must be a valid HTTP or HTTPS URL. Please verify your config/secrets.`);
   process.exit(1);
 }
 

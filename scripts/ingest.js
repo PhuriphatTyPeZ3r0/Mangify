@@ -32,8 +32,26 @@ const {
   GITHUB_REPOSITORY
 } = process.env;
 
+const cleanEnvVar = (val) => {
+  if (!val) return "";
+  return val.replace(/^['"]|['"]$/g, "").trim();
+};
+
+const NEXT_PUBLIC_SUPABASE_URL_CLEAN = cleanEnvVar(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const SUPABASE_SERVICE_ROLE_KEY_CLEAN = cleanEnvVar(process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+if (NEXT_PUBLIC_SUPABASE_URL_CLEAN.includes("placeholder") || NEXT_PUBLIC_SUPABASE_URL_CLEAN.includes("your-supabase")) {
+  console.error("❌ Error: NEXT_PUBLIC_SUPABASE_URL is configured with a placeholder value. Please check your GitHub secrets.");
+  process.exit(1);
+}
+
+if (!NEXT_PUBLIC_SUPABASE_URL_CLEAN.startsWith("http://") && !NEXT_PUBLIC_SUPABASE_URL_CLEAN.startsWith("https://")) {
+  console.error(`❌ Error: NEXT_PUBLIC_SUPABASE_URL ("${NEXT_PUBLIC_SUPABASE_URL_CLEAN}") must be a valid HTTP or HTTPS URL. Please verify your secrets.`);
+  process.exit(1);
+}
+
 // Initialize Supabase client
-const supabase = createClient(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+const supabase = createClient(NEXT_PUBLIC_SUPABASE_URL_CLEAN, SUPABASE_SERVICE_ROLE_KEY_CLEAN, {
   auth: {
     persistSession: false,
     autoRefreshToken: false,

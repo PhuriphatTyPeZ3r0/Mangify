@@ -194,7 +194,6 @@ export default function Home() {
     const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
     setScrollPercent(progress);
     
-    if (progress > 5) resetControlsTimeout();
     debouncedSyncProgress(progress, 0);
   };
 
