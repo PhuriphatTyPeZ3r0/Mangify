@@ -304,6 +304,17 @@ async function scrape() {
         if (existing) continue;
 
         console.log(`   └─ 📑 Syncing Chapter: ${ch.title}`);
+        
+        // Clean title and extract date
+        let cleanTitle = ch.title;
+        let releaseDate = null;
+        const dateRegex = /(มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)\s+\d+,\s+\d+/i;
+        const dateMatch = ch.title.match(dateRegex);
+        if (dateMatch) {
+          cleanTitle = ch.title.replace(dateMatch[0], "").trim();
+          releaseDate = dateMatch[0];
+        }
+
         await new Promise(r => setTimeout(r, 500));
         await page.goto(ch.url, { waitUntil: "networkidle2" });
 
@@ -324,7 +335,8 @@ async function scrape() {
           await supabaseAdmin.from("chapters").upsert({
             id: chapterId,
             manga_id: mangaData.id,
-            title: ch.title,
+            title: cleanTitle,
+            release_date: releaseDate,
             pages: pageImages,
             created_at: new Date().toISOString()
           });

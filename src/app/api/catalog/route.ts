@@ -134,6 +134,7 @@ export async function GET() {
         .map((ch: any) => ({
           id: ch.id,
           title: ch.title,
+          release_date: ch.release_date,
           pages: ch.pages,
           created_at: ch.created_at // Needed for "New Updates" logic
         }));

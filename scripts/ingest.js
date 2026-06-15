@@ -168,6 +168,16 @@ async function main() {
     // 6. Database writes (Supabase)
     console.log("💾 Writing chapter data to Supabase database...");
 
+    // Clean title and extract date
+    let cleanTitle = CHAPTER_TITLE;
+    let releaseDate = null;
+    const dateRegex = /(มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)\s+\d+,\s+\d+/i;
+    const dateMatch = CHAPTER_TITLE.match(dateRegex);
+    if (dateMatch) {
+      cleanTitle = CHAPTER_TITLE.replace(dateMatch[0], "").trim();
+      releaseDate = dateMatch[0];
+    }
+
     // 6.1 Ensure Manga record exists to satisfy foreign key constraints
     const { data: existingManga, error: mangaFetchError } = await supabase
       .from("manga")
@@ -205,7 +215,8 @@ async function main() {
       .upsert({
         id: CHAPTER_ID,
         manga_id: MANGA_ID,
-        title: CHAPTER_TITLE,
+        title: cleanTitle,
+        release_date: releaseDate,
         pages: pageUrls,
         created_at: new Date().toISOString()
       }, { onConflict: "id" });

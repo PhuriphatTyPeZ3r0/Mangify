@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS public.chapters (
     id TEXT PRIMARY KEY, -- Unique ID (e.g. 'kanglim-ch1')
     manga_id TEXT NOT NULL REFERENCES public.manga(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
+    release_date TEXT, -- Original release date string from scraper
     pages TEXT[] DEFAULT '{}'::TEXT[] NOT NULL, -- Array of WebP image URLs
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
