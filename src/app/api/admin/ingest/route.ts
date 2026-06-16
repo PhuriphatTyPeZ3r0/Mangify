@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "../../../../lib/supabaseClient";
+import { clearCatalogCache } from "../../catalog/route";
 
 export async function POST(request: NextRequest) {
   try {
@@ -73,6 +74,9 @@ export async function POST(request: NextRequest) {
         error: `GitHub repository dispatch failed: ${errorText}` 
       }, { status: 502 });
     }
+
+    // Clear cache immediately on ingestion dispatch
+    clearCatalogCache();
 
     return NextResponse.json({ 
       success: true, 

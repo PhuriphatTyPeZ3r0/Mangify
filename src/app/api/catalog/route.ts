@@ -36,8 +36,27 @@ function cleanGenres(genres: string[]): string[] {
   return Array.from(new Set(mapped));
 }
 
+// Global in-memory cache
+let cachedCatalog: any = null;
+let cacheExpiryTime: number = 0;
+const CACHE_DURATION = 1000 * 60 * 5; // 5 minutes
+
+export function clearCatalogCache() {
+  cachedCatalog = null;
+  cacheExpiryTime = 0;
+  console.log("⚡ [Catalog Cache] Invalidation triggered.");
+}
+
 export async function GET() {
   try {
+    const now = Date.now();
+    if (cachedCatalog && now < cacheExpiryTime) {
+      console.log("⚡ [Catalog Cache] Serving catalog from in-memory cache.");
+      return NextResponse.json({ mangas: cachedCatalog });
+    }
+
+    console.log("⚡ [Catalog Cache] Cache miss. Querying database...");
+
     // 1. Fetch all manga records from Supabase using supabaseAdmin
     const { data: mangasData, error: mangaError } = await supabaseAdmin
       .from("manga")
@@ -62,7 +81,7 @@ export async function GET() {
     while (fetchMoreChapters) {
       const { data: pageData, error: chaptersError } = await supabaseAdmin
         .from("chapters")
-        .select("*")
+        .select("id, manga_id, title, release_date, created_at")
         .order("created_at", { ascending: true })
         .range(chapterOffset, chapterOffset + CHAPTER_PAGE_SIZE - 1);
 
@@ -135,7 +154,7 @@ export async function GET() {
           id: ch.id,
           title: ch.title,
           release_date: ch.release_date,
-          pages: ch.pages,
+          pages: [], // Do not fetch pages here; they are loaded on-demand during reading
           created_at: ch.created_at // Needed for "New Updates" logic
         }));
 
@@ -182,6 +201,10 @@ export async function GET() {
         realBookmarks
       };
     });
+
+    // Save to cache
+    cachedCatalog = mappedMangas;
+    cacheExpiryTime = Date.now() + CACHE_DURATION;
 
     return NextResponse.json({ mangas: mappedMangas });
   } catch (err: any) {

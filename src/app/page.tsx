@@ -15,6 +15,7 @@ import { ReaderOverlay } from "../components/ReaderOverlay";
 import { AuthModal } from "../components/AuthModal";
 import { AdminPortal } from "../components/AdminPortal";
 import { QuickResumeBanner } from "../components/QuickResumeBanner";
+import { ProfilePortal } from "../components/ProfilePortal";
 
 export default function Home() {
   // --- Core State ---
@@ -30,6 +31,16 @@ export default function Home() {
   const [historyList, setHistoryList] = useState<ReadingProgress[]>([]);
   const [userId, setUserId] = useState<string>("");
   const [bookmarks, setBookmarks] = useState<string[]>([]);
+  const [mangaLoading, setMangaLoading] = useState(true);
+
+  // --- 2FA Login State ---
+  const [is2FAChallengeOpen, setIs2FAChallengeOpen] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [twoFactorLoading, setTwoFactorLoading] = useState(false);
+  const [twoFactorError, setTwoFactorError] = useState<string | null>(null);
+  const [twoFactorUserId, setTwoFactorUserId] = useState("");
+  const [twoFactorEmail, setTwoFactorEmail] = useState("");
+  const tempCredentialsRef = useRef({ email: "", password: "" });
 
   // Keep active history (banner) in sync with the latest item in the history list
   useEffect(() => {
@@ -80,11 +91,14 @@ export default function Home() {
   
   const fetchMangas = async () => {
     try {
+      setMangaLoading(true);
       const res = await fetch("/api/catalog");
       const data = await res.json();
       if (data.mangas) setMangas(data.mangas);
     } catch (err) {
       console.error("Failed to fetch mangas:", err);
+    } finally {
+      setMangaLoading(false);
     }
   };
 
@@ -226,8 +240,44 @@ export default function Home() {
     }
   };
 
-  const handleLaunchReader = (manga: Manga, chapterId: string, pageIndex = 0, scrollPct = 0) => {
+  const handleLaunchReader = async (manga: Manga, chapterId: string, pageIndex = 0, scrollPct = 0) => {
     isTransitioningChapterRef.current = true;
+    
+    // Find the chapter to check if pages need to be loaded on-demand
+    const chapter = manga.chapters.find(c => c.id === chapterId);
+    if (chapter && (!chapter.pages || chapter.pages.length === 0)) {
+      try {
+        const res = await fetch(`/api/chapters?id=${chapterId}`);
+        const data = await res.json();
+        if (data.pages) {
+          chapter.pages = data.pages;
+          // Sync client-side state by inserting pages
+          setMangas(prev => prev.map(m => {
+            if (m.id === manga.id) {
+              return {
+                ...m,
+                chapters: m.chapters.map(c => {
+                  if (c.id === chapterId) {
+                    return { ...c, pages: data.pages };
+                  }
+                  return c;
+                })
+              };
+            }
+            return m;
+          }));
+        } else {
+          alert("ไม่สามารถดึงข้อมูลหน้าของการ์ตูนได้: " + (data.error || "Unknown error"));
+          isTransitioningChapterRef.current = false;
+          return;
+        }
+      } catch (err: any) {
+        alert("เกิดข้อผิดพลาดในการโหลดหน้าการ์ตูน: " + err.message);
+        isTransitioningChapterRef.current = false;
+        return;
+      }
+    }
+
     setActiveManga(manga);
     setActiveChapterId(chapterId);
     setCurrentPageIndex(pageIndex);
@@ -378,14 +428,75 @@ export default function Home() {
         setAuthMode("login");
         setAuthError("สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
-        if (error) throw error;
-        setIsAuthModalOpen(false);
+        // Validate password and check if 2FA is required via Next.js backend
+        const res = await fetch("/api/auth/check-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: authEmail, password: authPassword })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+        }
+
+        if (data.requires2FA) {
+          // Open 2FA Challenge Modal and save temp login credentials
+          tempCredentialsRef.current = { email: authEmail, password: authPassword };
+          setTwoFactorUserId(data.userId);
+          setTwoFactorEmail(authEmail);
+          
+          setIsAuthModalOpen(false);
+          setTwoFactorCode("");
+          setTwoFactorError(null);
+          setIs2FAChallengeOpen(true);
+        } else {
+          // Standard password authentication directly on client
+          const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+          if (error) throw error;
+          setIsAuthModalOpen(false);
+        }
       }
     } catch (err: any) {
       setAuthError(err.message);
     } finally {
       setAuthLoading(false);
+    }
+  };
+
+  const handleVerify2FALoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTwoFactorLoading(true);
+    setTwoFactorError(null);
+
+    try {
+      // 1. Verify code via Next.js API
+      const res = await fetch("/api/auth/verify-2fa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: twoFactorUserId, code: twoFactorCode })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "รหัสยืนยัน 2FA ไม่ถูกต้อง");
+      }
+
+      // 2. Perform the actual Supabase sign-in on the client using verified temp credentials
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: tempCredentialsRef.current.email,
+        password: tempCredentialsRef.current.password
+      });
+
+      if (signInError) throw signInError;
+
+      // 3. Clear credentials ref and close modal
+      tempCredentialsRef.current = { email: "", password: "" };
+      setIs2FAChallengeOpen(false);
+    } catch (err: any) {
+      setTwoFactorError(err.message);
+    } finally {
+      setTwoFactorLoading(false);
     }
   };
 
@@ -449,14 +560,35 @@ export default function Home() {
       // Fallback: Top 10 most popular overall
       return [...mangas].sort((a, b) => getMangaScore(b) - getMangaScore(a)).slice(0, 10);
     }
-    // Filter mangas matching favorite genres
-    const matched = mangas.filter(m => 
-      m.genres?.some(g => favoriteGenres.includes(g))
-    );
-    if (matched.length === 0) {
-      return [...mangas].sort((a, b) => getMangaScore(b) - getMangaScore(a)).slice(0, 10);
+
+    // Jaccard Similarity Coefficient Recommendation Algorithm
+    const scoredMangas = mangas.map(m => {
+      const mangaGenres = m.genres || [];
+      const intersection = mangaGenres.filter(g => favoriteGenres.includes(g)).length;
+      const union = new Set([...favoriteGenres, ...mangaGenres]).size;
+      const jaccardScore = union > 0 ? intersection / union : 0;
+      
+      return {
+        manga: m,
+        jaccardScore,
+        popularityScore: getMangaScore(m)
+      };
+    });
+
+    let matches = scoredMangas.filter(item => item.jaccardScore > 0);
+    if (matches.length === 0) {
+      matches = scoredMangas;
     }
-    return matched.sort((a, b) => getMangaScore(b) - getMangaScore(a)).slice(0, 10);
+
+    // Sort by Jaccard Score descending, then popularity score as a tie-breaker
+    matches.sort((a, b) => {
+      if (b.jaccardScore !== a.jaccardScore) {
+        return b.jaccardScore - a.jaccardScore;
+      }
+      return b.popularityScore - a.popularityScore;
+    });
+
+    return matches.map(item => item.manga).slice(0, 10);
   };
 
   const handleSaveGenres = (selected: string[]) => {
@@ -625,6 +757,37 @@ export default function Home() {
   };
 
   // --- Render ---
+  if (!mounted || mangaLoading) {
+    return (
+      <div className="fixed inset-0 bg-background text-foreground flex flex-col items-center justify-center z-[9999] animate-in fade-in duration-300">
+        <div className="flex flex-col items-center gap-6">
+          <div className="relative flex items-center justify-center">
+            <span className="material-symbols-outlined text-accent text-6xl animate-bounce">
+              book_5
+            </span>
+            <div className="absolute inset-0 w-16 h-16 bg-accent/25 rounded-full blur-xl animate-ping" />
+          </div>
+          
+          <div className="text-center space-y-2">
+            <h1 className="prompt-bold text-3xl tracking-tight bg-gradient-to-r from-foreground to-accent bg-clip-text text-transparent">
+              Mangify
+            </h1>
+            <p className="prompt-light text-xs opacity-75">
+              กำลังจัดเตรียมหิ้งหนังสือการ์ตูนสุดพิเศษสำหรับคุณ...
+            </p>
+          </div>
+
+          <div className="w-48 h-1 bg-border/40 rounded-full overflow-hidden relative">
+            <div className="absolute top-0 left-0 h-full bg-accent rounded-full w-2/3" style={{
+              backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
+              animation: 'shimmer 1.5s infinite linear'
+            }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground transition-colors duration-300 px-4 md:px-8 lg:px-12 pb-12">
       
@@ -652,6 +815,12 @@ export default function Home() {
             adminLogs={adminLogs}
             ingesting={ingesting}
             onIngest={handleIngest}
+          />
+        ) : activeTab === "profile" ? (
+          <ProfilePortal 
+            userId={userId}
+            userEmail={session?.user?.email || ""}
+            onLogout={handleLogout}
           />
         ) : (
           <>
@@ -1080,6 +1249,65 @@ export default function Home() {
           error={authError}
           onSubmit={handleAuthSubmit}
         />
+      )}
+
+      {/* 2FA Login Challenge Modal */}
+      {is2FAChallengeOpen && renderPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[2000] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-surface border border-border w-full max-w-md rounded-3xl p-6 shadow-2xl relative animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+            <button 
+              onClick={() => setIs2FAChallengeOpen(false)}
+              className="absolute top-4 right-4 p-1 rounded-lg hover:bg-foreground/5 transition-colors cursor-pointer text-foreground flex items-center justify-center"
+              aria-label="Close 2FA modal"
+            >
+              <span className="material-symbols-outlined text-[20px]">close</span>
+            </button>
+
+            <div className="text-center mb-6">
+              <span className="material-symbols-outlined text-accent text-[48px] mb-2 fill">security</span>
+              <h3 className="prompt-bold text-xl text-foreground">การยืนยันตัวตนแบบสองขั้นตอน (2FA)</h3>
+              <p className="prompt-light text-xs opacity-60 mt-1.5 px-4 text-foreground">
+                กรุณากรอกรหัสยืนยัน 6 หลักที่เราส่งไปยัง Gmail <strong>{twoFactorEmail}</strong> ของคุณเพื่อเข้าสู่ระบบความปลอดภัย
+              </p>
+            </div>
+
+            <form onSubmit={handleVerify2FALoginSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <input 
+                  type="text"
+                  required
+                  maxLength={6}
+                  pattern="\d{6}"
+                  placeholder="123456"
+                  value={twoFactorCode}
+                  onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ""))}
+                  className="w-full text-center tracking-[10px] font-bold text-xl prompt-bold px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
+
+              {twoFactorError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-500 rounded-xl text-xs prompt-regular">
+                  {twoFactorError}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={twoFactorLoading || twoFactorCode.length !== 6}
+                className="w-full bg-accent hover:opacity-90 disabled:opacity-50 text-white font-medium py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm text-sm prompt-semibold"
+              >
+                {twoFactorLoading ? (
+                  <>
+                    <span className="material-symbols-outlined text-[16px] animate-spin">cached</span>
+                    กำลังยืนยัน...
+                  </>
+                ) : (
+                  "ยืนยันและเข้าสู่ระบบ"
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* Favorite Genres Modal */}
