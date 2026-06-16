@@ -1,21 +1,43 @@
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 
-const resendApiKey = process.env.RESEND_API_KEY;
-export const resend = resendApiKey ? new Resend(resendApiKey) : null;
+const smtpUser = process.env.SMTP_USER;
+const smtpPassword = process.env.SMTP_PASSWORD;
+
+// Create transporter using Gmail SMTP service
+const transporter = smtpUser && smtpPassword
+  ? nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: smtpUser,
+        pass: smtpPassword, // Gmail App Password (16 characters)
+      },
+    })
+  : null;
 
 /**
- * Sends a 2FA verification code to the user's email address using Resend.
+ * Sends a 2FA verification code to the user's email address using Gmail SMTP (Nodemailer).
+ * If SMTP keys are missing, it logs the code to the terminal console as a fallback.
  */
 export const send2FACodeEmail = async (toEmail: string, code: string) => {
-  if (!resend) {
-    console.warn("📢 Notification skipped: RESEND_API_KEY is not configured.");
-    return { success: false, error: "RESEND_API_KEY not configured on the server." };
+  if (!transporter) {
+    console.log("\n-----------------------------------------");
+    console.log(`🔑 [DEVELOPMENT 2FA CODE FALLBACK]`);
+    console.log(`To: ${toEmail}`);
+    console.log(`Code: ${code}`);
+    console.log("-----------------------------------------");
+    console.log("📢 TIP: To send real emails, add SMTP_USER and SMTP_PASSWORD to your .env.local file.\n");
+    
+    // Return success to client so local development/testing is not blocked
+    return { 
+      success: true, 
+      warning: "SMTP_USER or SMTP_PASSWORD is not configured. Code logged to server console." 
+    };
   }
-  
+
   try {
-    const { data, error } = await resend.emails.send({
-      from: "Mangify Auth <onboarding@resend.dev>",
-      to: [toEmail],
+    const mailOptions = {
+      from: `"Mangify Security" <${smtpUser}>`,
+      to: toEmail,
       subject: `🛡️ รหัสยืนยัน 2FA สำหรับเข้าสู่ระบบ Mangify: ${code}`,
       html: `
         <div style="font-family: 'Prompt', sans-serif; padding: 30px; max-width: 550px; margin: auto; border: 1px solid #e6dfd5; border-radius: 16px; background-color: #faf8f5;">
@@ -33,16 +55,14 @@ export const send2FACodeEmail = async (toEmail: string, code: string) => {
           <hr style="border: 0; border-top: 1px solid #e6dfd5; margin: 24px 0;" />
           <p style="font-size: 11px; color: #888; line-height: 1.4;">หากคุณไม่ได้ขอดำเนินการนี้ โปรดเปลี่ยนรหัสผ่านบัญชีผู้ใช้ของคุณทันทีเพื่อความปลอดภัยของข้อมูล</p>
         </div>
-      `
-    });
-    
-    if (error) {
-      console.error("❌ Resend API Error:", error);
-      return { success: false, error: error.message };
-    }
-    return { success: true, data };
+      `,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`📧 2FA code email successfully sent to ${toEmail}`);
+    return { success: true };
   } catch (err: any) {
-    console.error("❌ Failed to send 2FA email:", err);
-    return { success: false, error: err.message };
+    console.error("❌ Failed to send 2FA email via Gmail SMTP:", err);
+    return { success: false, error: err.message || "Failed to send email." };
   }
 };
