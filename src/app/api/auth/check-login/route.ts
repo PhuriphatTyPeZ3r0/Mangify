@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to initialize 2FA verification." }, { status: 500 });
     }
 
-    // Send email using Resend
+    // Send email using Gmail SMTP
     const emailResult = await send2FACodeEmail(email, code);
 
     if (!emailResult.success) {

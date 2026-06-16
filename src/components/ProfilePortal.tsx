@@ -107,7 +107,7 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
     setIsVerifying2FA(true);
 
     try {
-      // Call Next.js API to generate and send verification code via Resend
+      // Call Next.js API to generate and send verification code via Gmail SMTP
       const res = await fetch("/api/auth/send-2fa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

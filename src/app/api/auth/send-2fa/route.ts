@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to generate 2FA session in database." }, { status: 500 });
     }
 
-    // Send 2FA email using Resend
+    // Send 2FA email using Gmail SMTP
     const emailResult = await send2FACodeEmail(email, code);
 
     if (!emailResult.success) {
