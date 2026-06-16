@@ -50,9 +50,10 @@ export default function Home() {
   // --- Auth State ---
   const [session, setSession] = useState<any>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authMode, setAuthMode] = useState<"login" | "signup" | "emailsent">("login");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authConfirmPassword, setAuthConfirmPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -423,10 +424,14 @@ export default function Home() {
 
     try {
       if (authMode === "signup") {
+        if (authPassword !== authConfirmPassword) {
+          throw new Error("รหัสผ่านและการยืนยันรหัสผ่านไม่ตรงกัน");
+        }
         const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
         if (error) throw error;
-        setAuthMode("login");
-        setAuthError("สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ");
+        setAuthPassword("");
+        setAuthConfirmPassword("");
+        setAuthMode("emailsent");
       } else {
         // Validate password and check if 2FA is required via Next.js backend
         const res = await fetch("/api/auth/check-login", {
@@ -800,6 +805,8 @@ export default function Home() {
         onOpenAuth={(mode) => {
           setAuthMode(mode);
           setAuthError(null);
+          setAuthPassword("");
+          setAuthConfirmPassword("");
           setIsAuthModalOpen(true);
         }}
         activeTheme={activeTheme}
@@ -1240,11 +1247,18 @@ export default function Home() {
           isOpen={isAuthModalOpen}
           mode={authMode}
           onClose={() => setIsAuthModalOpen(false)}
-          onSetMode={setAuthMode}
+          onSetMode={(mode) => {
+            setAuthMode(mode);
+            setAuthError(null);
+            setAuthPassword("");
+            setAuthConfirmPassword("");
+          }}
           email={authEmail}
           onEmailChange={setAuthEmail}
           password={authPassword}
           onPasswordChange={setAuthPassword}
+          confirmPassword={authConfirmPassword}
+          onConfirmPasswordChange={setAuthConfirmPassword}
           loading={authLoading}
           error={authError}
           onSubmit={handleAuthSubmit}
