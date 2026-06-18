@@ -25,7 +25,7 @@ export const AnimeAvatar: React.FC<AnimeAvatarProps> = ({ cover, title, onClick,
     let active = true;
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.src = cover;
+    img.src = `/api/proxy-image?url=${encodeURIComponent(cover)}`;
     
     img.onload = () => {
       if (!active) return;
@@ -73,8 +73,11 @@ export const AnimeAvatar: React.FC<AnimeAvatarProps> = ({ cover, title, onClick,
               const g = data[idx + 1];
               const b = data[idx + 2];
 
-              // Skin detection: Peach / Warm anime colors
-              const isSkin = r > 215 && g > 165 && b > 130 && r > g && g > b && (r - b) < 95;
+              // Skin detection: Peach / Warm anime colors (excludes highly saturated text colors)
+              const isSkin = r > 215 && g > 175 && b > 140 && 
+                             r > g && g > b && 
+                             (r - b) < 70 && 
+                             (r - g) < 40;
               if (isSkin) {
                 const binIdxY = Math.floor((y - yStart) / binSizeY);
                 const binIdxX = Math.floor(x / binSizeX);
