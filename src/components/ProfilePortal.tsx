@@ -12,161 +12,54 @@ interface ProfilePortalProps {
 interface AnimeAvatarProps {
   cover: string;
   title: string;
-  onClick: (croppedUrl: string) => void;
-  isActive: boolean;
+  onClick: (avatarUrl: string) => void;
+  selectedAvatar: string;
 }
 
-export const AnimeAvatar: React.FC<AnimeAvatarProps> = ({ cover, title, onClick, isActive }) => {
-  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
-  const [croppedUrl, setCroppedUrl] = React.useState<string>("");
+export const AnimeAvatar: React.FC<AnimeAvatarProps> = ({ cover, title, onClick, selectedAvatar }) => {
+  const [avatarUrl, setAvatarUrl] = React.useState<string>("");
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
     let active = true;
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = `/api/proxy-image?url=${encodeURIComponent(cover)}`;
     
-    img.onload = () => {
-      if (!active) return;
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      canvas.width = 150;
-      canvas.height = 150;
-
-      // Analyze skin color dynamically for face detection fallback
-      const offCanvas = document.createElement("canvas");
-      const offCtx = offCanvas.getContext("2d");
-      if (offCtx) {
-        const scale = 200 / img.width;
-        offCanvas.width = 200;
-        offCanvas.height = img.height * scale;
-        offCtx.drawImage(img, 0, 0, offCanvas.width, offCanvas.height);
-
-        try {
-          const imgData = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height);
-          const data = imgData.data;
-
-          // Search in the middle section of the cover (typical face area, avoiding logo/texts)
-          const yStart = Math.floor(offCanvas.height * 0.20);
-          const yEnd = Math.floor(offCanvas.height * 0.65);
-
-          // Histogram binning setup (30 bins for vertical and horizontal axes)
-          const numBinsY = 30;
-          const numBinsX = 30;
-          const binsY = new Array(numBinsY).fill(0);
-          const binsX = new Array(numBinsX).fill(0);
-
-          const binSizeY = (yEnd - yStart) / numBinsY;
-          const binSizeX = offCanvas.width / numBinsX;
-
-          let skinCount = 0;
-
-          for (let y = yStart; y < yEnd; y += 2) {
-            for (let x = 0; x < offCanvas.width; x += 2) {
-              const idx = (y * offCanvas.width + x) * 4;
-              const r = data[idx];
-              const g = data[idx + 1];
-              const b = data[idx + 2];
-
-              // Skin detection: Peach / Warm anime colors (excludes highly saturated text colors)
-              const isSkin = r > 215 && g > 175 && b > 140 && 
-                             r > g && g > b && 
-                             (r - b) < 70 && 
-                             (r - g) < 40;
-              if (isSkin) {
-                const binIdxY = Math.floor((y - yStart) / binSizeY);
-                const binIdxX = Math.floor(x / binSizeX);
-                
-                if (binIdxY >= 0 && binIdxY < numBinsY) binsY[binIdxY]++;
-                if (binIdxX >= 0 && binIdxX < numBinsX) binsX[binIdxX]++;
-                skinCount++;
-              }
-            }
-          }
-
-          let targetX = img.width / 2;
-          let targetY = img.height * 0.38; // Default focus (slightly lower to avoid header title)
-
-          // If we found a significant number of skin-like pixels, locate the peak density bin
-          if (skinCount > 30) {
-            // Find max Y bin
-            let maxYBinIdx = 0;
-            let maxYBinVal = 0;
-            for (let i = 0; i < numBinsY; i++) {
-              if (binsY[i] > maxYBinVal) {
-                maxYBinVal = binsY[i];
-                maxYBinIdx = i;
-              }
-            }
-
-            // Find max X bin
-            let maxXBinIdx = 0;
-            let maxXBinVal = 0;
-            for (let j = 0; j < numBinsX; j++) {
-              if (binsX[j] > maxXBinVal) {
-                maxXBinVal = binsX[j];
-                maxXBinIdx = j;
-              }
-            }
-
-            // Calculate peak position (center of the most dense bin)
-            const peakYLocal = yStart + (maxYBinIdx + 0.5) * binSizeY;
-            const peakXLocal = (maxXBinIdx + 0.5) * binSizeX;
-
-            targetX = peakXLocal / scale;
-            targetY = peakYLocal / scale;
-          }
-
-          const cropSize = Math.min(img.width, img.height) * 0.33; // Tighter crop focusing strictly on the face
-          const sourceX = Math.max(0, Math.min(img.width - cropSize, targetX - cropSize / 2));
-          const sourceY = Math.max(0, Math.min(img.height - cropSize, targetY - cropSize / 2));
-
-          ctx.drawImage(img, sourceX, sourceY, cropSize, cropSize, 0, 0, 150, 150);
-          
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
-          setCroppedUrl(dataUrl);
-        } catch (e) {
-          // If security block (CORS) or error, draw standard tighter center crop (avoid top text)
-          const cropSize = Math.min(img.width, img.height) * 0.33;
-          const sourceX = (img.width - cropSize) / 2;
-          const sourceY = img.height * 0.25;
-          ctx.drawImage(img, sourceX, sourceY, cropSize, cropSize, 0, 0, 150, 150);
-          
-          try {
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
-            setCroppedUrl(dataUrl);
-          } catch (err) {
-            // fallback to original cover url
-            setCroppedUrl(cover);
-          }
+    const fetchAvatar = async () => {
+      try {
+        const response = await fetch(`/api/manga-avatar?title=${encodeURIComponent(title)}`);
+        if (!response.ok) throw new Error("Failed to fetch avatar");
+        const data = await response.json();
+        if (active) {
+          setAvatarUrl(data.url || cover);
         }
-      } else {
-        setCroppedUrl(cover);
+      } catch (err) {
+        if (active) {
+          setAvatarUrl(cover);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
-      setLoading(false);
     };
 
-    img.onerror = () => {
-      if (active) {
-        setCroppedUrl(cover);
-        setLoading(false);
-      }
-    };
+    fetchAvatar();
 
     return () => {
       active = false;
     };
-  }, [cover]);
+  }, [title, cover]);
+
+  // Determine if this avatar is selected (matches either the Pinterest URL, cover URL, or filename)
+  const isActive = selectedAvatar && avatarUrl && (
+    selectedAvatar === avatarUrl || 
+    selectedAvatar === cover ||
+    selectedAvatar.includes(avatarUrl.split("/").pop() || "no-match")
+  );
 
   return (
     <button
       type="button"
-      onClick={() => onClick(croppedUrl || cover)}
+      onClick={() => onClick(avatarUrl || cover)}
       className={`aspect-square rounded-2xl overflow-hidden border-2 transition-all relative group cursor-pointer ${
         isActive 
           ? "border-accent ring-4 ring-accent/20 scale-[1.03]" 
@@ -174,12 +67,11 @@ export const AnimeAvatar: React.FC<AnimeAvatarProps> = ({ cover, title, onClick,
       }`}
       title={title}
     >
-      <canvas ref={canvasRef} className="hidden" />
       {loading ? (
         <div className="w-full h-full skeleton animate-pulse" />
       ) : (
         <img 
-          src={croppedUrl || cover} 
+          src={avatarUrl || cover} 
           alt={title} 
           className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-300" 
         />
@@ -580,13 +472,9 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
                         key={manga.id}
                         cover={manga.cover}
                         title={manga.title}
-                        isActive={
-                          selectedAvatar === manga.cover || 
-                          (selectedAvatar.startsWith("data:") && selectedAvatar.includes(manga.title)) || 
-                          (selectedAvatar.includes(manga.cover.split("/").pop() || "no-match"))
-                        }
-                        onClick={(croppedUrl) => {
-                          setSelectedAvatar(croppedUrl);
+                        selectedAvatar={selectedAvatar}
+                        onClick={(avatarUrl) => {
+                          setSelectedAvatar(avatarUrl);
                         }}
                       />
                     ))}
