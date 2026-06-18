@@ -27,7 +27,30 @@ async function getVqdToken(query: string): Promise<string> {
   return match[1];
 }
 
-async function searchPinterestAvatar(title: string): Promise<string | null> {
+function cleanMangaTitleForSearch(title: string): string {
+  // If the title contains comma (like original_title list), take the first English one
+  if (title.includes(",")) {
+    const parts = title.split(",");
+    for (const part of parts) {
+      const cleanPart = part.trim();
+      if (/^[a-zA-Z0-9\s':\-,!]+$/.test(cleanPart)) {
+        return cleanPart;
+      }
+    }
+    return parts[0].trim();
+  }
+
+  // If the title has both English and non-English (e.g. Thai) like "Nano Machine นาโนมาชิน"
+  const englishMatch = title.match(/^[a-zA-Z0-9\s':\-,!]{3,}/);
+  if (englishMatch) {
+    return englishMatch[0].trim();
+  }
+
+  return title.split(/[\(\)\[\]]/)[0].trim();
+}
+
+async function searchPinterestAvatar(rawTitle: string): Promise<string | null> {
+  const title = cleanMangaTitleForSearch(rawTitle);
   // Try with Pinterest first
   const query = `${title} main character icon site:pinterest.com`;
   try {
