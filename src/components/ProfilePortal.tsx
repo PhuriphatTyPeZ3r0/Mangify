@@ -9,15 +9,6 @@ interface ProfilePortalProps {
   mangas?: Manga[];
 }
 
-export const AVATAR_PRESETS = [
-  { name: "Na Kang Lim", url: "https://www.up-manga.com/wp-content/uploads/2023/11/Webtoon-Character-Na-Kang-Lim.jpg" },
-  { name: "Yoo Ah-rin", url: "https://www.up-manga.com/wp-content/uploads/2023/11/Webtoon-Character-Na-Kang-Lim-ep1-1.jpg" },
-  { name: "Baek Eun-ha", url: "https://www.up-manga.com/wp-content/uploads/2023/11/Webtoon-Character-Na-Kang-Lim-ep1-2.jpg" },
-  { name: "Robo Felix", url: "https://api.dicebear.com/7.x/bottts/svg?seed=Felix" },
-  { name: "Robo Aneka", url: "https://api.dicebear.com/7.x/bottts/svg?seed=Aneka" },
-  { name: "Robo Nala", url: "https://api.dicebear.com/7.x/bottts/svg?seed=Nala" }
-];
-
 interface AnimeAvatarProps {
   cover: string;
   title: string;
@@ -60,9 +51,9 @@ export const AnimeAvatar: React.FC<AnimeAvatarProps> = ({ cover, title, onClick,
           const imgData = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height);
           const data = imgData.data;
 
-          // Search in the upper-middle section of the cover (typical face area)
-          const yStart = Math.floor(offCanvas.height * 0.12);
-          const yEnd = Math.floor(offCanvas.height * 0.52);
+          // Search in the middle section of the cover (typical face area, avoiding logo/texts)
+          const yStart = Math.floor(offCanvas.height * 0.20);
+          const yEnd = Math.floor(offCanvas.height * 0.65);
 
           let totalX = 0;
           let totalY = 0;
@@ -86,14 +77,14 @@ export const AnimeAvatar: React.FC<AnimeAvatarProps> = ({ cover, title, onClick,
           }
 
           let targetX = img.width / 2;
-          let targetY = img.height * 0.32; // Default focus (upper 1/3)
+          let targetY = img.height * 0.38; // Default focus (slightly lower to avoid header title)
 
           if (count > 30) {
             targetX = (totalX / count) / scale;
             targetY = (totalY / count) / scale;
           }
 
-          const cropSize = Math.min(img.width, img.height) * 0.45;
+          const cropSize = Math.min(img.width, img.height) * 0.33; // Tighter crop focusing strictly on the face
           const sourceX = Math.max(0, Math.min(img.width - cropSize, targetX - cropSize / 2));
           const sourceY = Math.max(0, Math.min(img.height - cropSize, targetY - cropSize / 2));
 
@@ -102,10 +93,10 @@ export const AnimeAvatar: React.FC<AnimeAvatarProps> = ({ cover, title, onClick,
           const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
           setCroppedUrl(dataUrl);
         } catch (e) {
-          // If security block (CORS) or error, draw standard top-center crop
-          const cropSize = Math.min(img.width, img.height) * 0.5;
+          // If security block (CORS) or error, draw standard tighter center crop (avoid top text)
+          const cropSize = Math.min(img.width, img.height) * 0.33;
           const sourceX = (img.width - cropSize) / 2;
-          const sourceY = img.height * 0.12;
+          const sourceY = img.height * 0.25;
           ctx.drawImage(img, sourceX, sourceY, cropSize, cropSize, 0, 0, 150, 150);
           
           try {
@@ -173,10 +164,9 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
   onLogout,
   mangas = []
 }) => {
-  // Profile details state
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
-  const [selectedAvatar, setSelectedAvatar] = useState(AVATAR_PRESETS[0].url);
+  const [selectedAvatar, setSelectedAvatar] = useState("");
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
   
@@ -209,7 +199,7 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
       } else if (data) {
         setDisplayName(data.display_name || "");
         setUsername(data.username || "");
-        setSelectedAvatar(data.avatar_url || AVATAR_PRESETS[0].url);
+        setSelectedAvatar(data.avatar_url || "");
         setTwoFactorEnabled(!!data.two_factor_enabled);
       }
     } catch (err) {
@@ -329,10 +319,16 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
           {/* Avatar frame */}
           <div 
             onClick={() => setIsAvatarModalOpen(true)}
-            className="w-24 h-24 rounded-full overflow-hidden border-2 border-accent/20 shadow-md mb-4 relative bg-background group cursor-pointer hover:border-accent hover:scale-105 transition-all duration-300"
+            className="w-24 h-24 rounded-full overflow-hidden border-2 border-accent/20 shadow-md mb-4 relative bg-background flex items-center justify-center group cursor-pointer hover:border-accent hover:scale-105 transition-all duration-300"
             title="คลิกเพื่อเปลี่ยนรูปภาพโปรไฟล์"
           >
-            <img src={selectedAvatar} alt="Profile Avatar" className="w-full h-full object-cover group-hover:opacity-75 transition-opacity duration-300" />
+            {selectedAvatar ? (
+              <img src={selectedAvatar} alt="Profile Avatar" className="w-full h-full object-cover group-hover:opacity-75 transition-opacity duration-300" />
+            ) : (
+              <div className="w-full h-full bg-accent/10 flex items-center justify-center text-accent prompt-bold text-2xl group-hover:opacity-75 transition-opacity duration-300">
+                {displayName ? displayName.charAt(0).toUpperCase() : (username ? username.charAt(0).toUpperCase() : "?")}
+              </div>
+            )}
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity duration-300">
               <span className="material-symbols-outlined text-[20px]">edit</span>
             </div>
@@ -345,45 +341,6 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
           <span className="mt-3 px-3 py-1 bg-accent/10 text-accent rounded-full text-[10px] prompt-medium">
             @{username || "no_username"}
           </span>
-
-          <hr className="w-full border-border/50 my-6" />
-
-          {/* Quick presets picker */}
-          <div className="w-full">
-            <h4 className="prompt-semibold text-xs text-foreground/80 mb-3 text-left">เลือกรูปภาพโปรไฟล์ของคุณ:</h4>
-            <div className="grid grid-cols-3 gap-2">
-              {AVATAR_PRESETS.map((preset) => {
-                const isActive = selectedAvatar === preset.url;
-                return (
-                  <button
-                    type="button"
-                    key={preset.name}
-                    onClick={() => setSelectedAvatar(preset.url)}
-                    className={`aspect-square rounded-xl overflow-hidden border transition-all relative group cursor-pointer ${
-                      isActive ? "border-accent ring-2 ring-accent/20" : "border-border hover:border-accent/40"
-                    }`}
-                    title={preset.name}
-                  >
-                    <img src={preset.url} alt={preset.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                    {isActive && (
-                      <div className="absolute inset-0 bg-accent/25 flex items-center justify-center text-white">
-                        <span className="material-symbols-outlined text-[16px] fill">check_circle</span>
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            
-            <button
-              type="button"
-              onClick={() => setIsAvatarModalOpen(true)}
-              className="mt-4 w-full flex items-center justify-center gap-1.5 py-2.5 px-4 bg-accent/10 hover:bg-accent/20 text-accent rounded-xl text-xs font-semibold prompt-semibold border border-accent/20 hover:border-accent/30 transition-all cursor-pointer shadow-sm hover:scale-[1.01]"
-            >
-              <span className="material-symbols-outlined text-[16px]">face</span>
-              เลือกจากตัวละครการ์ตูนหลัก
-            </button>
-          </div>
         </div>
 
         {/* Right Card: Settings form */}
@@ -451,27 +408,6 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
                 value={userEmail}
                 className="w-full text-sm prompt-regular px-4 py-2.5 rounded-xl border border-border bg-background opacity-50 cursor-not-allowed"
               />
-            </div>
-
-            {/* Security Section (2FA Toggle) */}
-            <div className="border-t border-border/50 pt-6 mt-6 space-y-4">
-              <h3 className="prompt-bold text-sm text-foreground/90 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[18px] text-accent">security</span>
-                ระบบความปลอดภัยเพิ่มเติม
-              </h3>
-              
-              <div className="flex items-center justify-between p-4 bg-accent/5 border border-accent/20 rounded-2xl">
-                <div className="text-left pr-4">
-                  <h4 className="prompt-semibold text-xs text-accent">การยืนยันตัวตนแบบสองขั้นตอน (2FA) ถูกเปิดใช้งานถาวร</h4>
-                  <p className="prompt-light text-[11px] opacity-75 mt-0.5 text-foreground/80">
-                    เพื่อความปลอดภัยสูงสุดของบัญชีสมาชิก ระบบจะส่งรหัสผ่าน 6 หลักเข้า Gmail ของคุณทุกครั้งเมื่อเข้าสู่ระบบใหม่เสมอ
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 px-3 py-1 bg-accent text-white rounded-full text-[10px] prompt-semibold shadow-xs shrink-0 select-none">
-                  <span className="material-symbols-outlined text-[12px] fill">verified_user</span>
-                  เปิดใช้งานแล้ว
-                </div>
-              </div>
             </div>
 
             {/* Footer Buttons */}
@@ -593,7 +529,7 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
               <div>
                 <h4 className="prompt-semibold text-xs text-foreground/80 mb-3 flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[16px] text-accent">menu_book</span>
-                  ตัวละครหลักจากมังงะใน Mangify (AI Smart Crop):
+                  รูปโปรไฟล์:
                 </h4>
                 {mangas.length === 0 ? (
                   <div className="text-center py-6 text-xs opacity-60">
@@ -618,43 +554,6 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
                     ))}
                   </div>
                 )}
-              </div>
-
-              <hr className="border-border/50" />
-
-              {/* Classical Preset Avatars */}
-              <div>
-                <h4 className="prompt-semibold text-xs text-foreground/80 mb-3 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px] text-accent">account_circle</span>
-                  รูปโปรไฟล์เริ่มต้น (Default Presets):
-                </h4>
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-                  {AVATAR_PRESETS.map((preset) => {
-                    const isActive = selectedAvatar === preset.url;
-                    return (
-                      <button
-                        type="button"
-                        key={preset.name}
-                        onClick={() => {
-                          setSelectedAvatar(preset.url);
-                        }}
-                        className={`aspect-square rounded-2xl overflow-hidden border-2 transition-all relative group cursor-pointer ${
-                          isActive 
-                            ? "border-accent ring-4 ring-accent/20 scale-[1.03]" 
-                            : "border-border/60 hover:border-accent/50 hover:scale-[1.02]"
-                        }`}
-                        title={preset.name}
-                      >
-                        <img src={preset.url} alt={preset.name} className="w-full h-full object-cover group-hover:scale-105 duration-300" />
-                        {isActive && (
-                          <div className="absolute inset-0 bg-accent/20 flex items-center justify-center text-white">
-                            <span className="material-symbols-outlined text-[18px] fill">check_circle</span>
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
             </div>
 
