@@ -55,12 +55,19 @@ export const AnimeAvatar: React.FC<AnimeAvatarProps> = ({ cover, title, onClick,
           const yStart = Math.floor(offCanvas.height * 0.20);
           const yEnd = Math.floor(offCanvas.height * 0.65);
 
-          let totalX = 0;
-          let totalY = 0;
-          let count = 0;
+          // Histogram binning setup (30 bins for vertical and horizontal axes)
+          const numBinsY = 30;
+          const numBinsX = 30;
+          const binsY = new Array(numBinsY).fill(0);
+          const binsX = new Array(numBinsX).fill(0);
 
-          for (let y = yStart; y < yEnd; y += 3) {
-            for (let x = 0; x < offCanvas.width; x += 3) {
+          const binSizeY = (yEnd - yStart) / numBinsY;
+          const binSizeX = offCanvas.width / numBinsX;
+
+          let skinCount = 0;
+
+          for (let y = yStart; y < yEnd; y += 2) {
+            for (let x = 0; x < offCanvas.width; x += 2) {
               const idx = (y * offCanvas.width + x) * 4;
               const r = data[idx];
               const g = data[idx + 1];
@@ -69,9 +76,12 @@ export const AnimeAvatar: React.FC<AnimeAvatarProps> = ({ cover, title, onClick,
               // Skin detection: Peach / Warm anime colors
               const isSkin = r > 215 && g > 165 && b > 130 && r > g && g > b && (r - b) < 95;
               if (isSkin) {
-                totalX += x;
-                totalY += y;
-                count++;
+                const binIdxY = Math.floor((y - yStart) / binSizeY);
+                const binIdxX = Math.floor(x / binSizeX);
+                
+                if (binIdxY >= 0 && binIdxY < numBinsY) binsY[binIdxY]++;
+                if (binIdxX >= 0 && binIdxX < numBinsX) binsX[binIdxX]++;
+                skinCount++;
               }
             }
           }
@@ -79,9 +89,34 @@ export const AnimeAvatar: React.FC<AnimeAvatarProps> = ({ cover, title, onClick,
           let targetX = img.width / 2;
           let targetY = img.height * 0.38; // Default focus (slightly lower to avoid header title)
 
-          if (count > 30) {
-            targetX = (totalX / count) / scale;
-            targetY = (totalY / count) / scale;
+          // If we found a significant number of skin-like pixels, locate the peak density bin
+          if (skinCount > 30) {
+            // Find max Y bin
+            let maxYBinIdx = 0;
+            let maxYBinVal = 0;
+            for (let i = 0; i < numBinsY; i++) {
+              if (binsY[i] > maxYBinVal) {
+                maxYBinVal = binsY[i];
+                maxYBinIdx = i;
+              }
+            }
+
+            // Find max X bin
+            let maxXBinIdx = 0;
+            let maxXBinVal = 0;
+            for (let j = 0; j < numBinsX; j++) {
+              if (binsX[j] > maxXBinVal) {
+                maxXBinVal = binsX[j];
+                maxXBinIdx = j;
+              }
+            }
+
+            // Calculate peak position (center of the most dense bin)
+            const peakYLocal = yStart + (maxYBinIdx + 0.5) * binSizeY;
+            const peakXLocal = (maxXBinIdx + 0.5) * binSizeX;
+
+            targetX = peakXLocal / scale;
+            targetY = peakYLocal / scale;
           }
 
           const cropSize = Math.min(img.width, img.height) * 0.33; // Tighter crop focusing strictly on the face
