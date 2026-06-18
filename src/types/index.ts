@@ -40,4 +40,3 @@ export interface ReadingProgress {
 }
 
 export type Theme = 'light' | 'sepia' | 'charcoal' | 'oled';
-export type ReadingMode = 'vertical' | 'horizontal';

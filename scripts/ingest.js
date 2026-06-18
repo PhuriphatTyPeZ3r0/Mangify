@@ -190,99 +190,28 @@ async function main() {
 
     console.log(`📸 Found ${allImages.length} images. Processing and converting to WebP...`);
 
-    const { execSync } = require("child_process");
     const pageUrls = [];
-    let globalPageCounter = 1;
 
-    // 5. Convert to WebP and save to local directory (with webtoon slicing support)
+    // 5. Convert to WebP and save to local directory
     for (let i = 0; i < allImages.length; i++) {
       const imgPath = allImages[i];
-      console.log(`⏳ Processing image ${i + 1}/${allImages.length}: ${path.basename(imgPath)}`);
+      const pageNumber = i + 1;
+      const filename = `page-${pageNumber}.webp`;
+      const outputFilePath = path.join(mangaOutputDir, filename);
 
-      // Inspect metadata to check height/width aspect ratio
-      const metadata = await sharp(imgPath).metadata();
-      const width = metadata.width || 0;
-      const height = metadata.height || 0;
-      const isWebtoonStrip = width > 0 && (height / width > 1.8);
+      console.log(`⏳ Processing page ${pageNumber}/${allImages.length}: ${path.basename(imgPath)}`);
 
-      if (isWebtoonStrip) {
-        console.log(`📏 Detected Webtoon Strip (${width}x${height}px). Slicing into pages...`);
-        const sliceDir = path.join(outputRoot, `slices-${i}`);
-        fs.mkdirSync(sliceDir, { recursive: true });
-        
-        let pythonSuccess = false;
-        try {
-          // Attempt python panel-slicer
-          console.log(`🐍 Running python slice-panels.py on ${path.basename(imgPath)}...`);
-          const pyScript = path.join(__dirname, "slice-panels.py");
-          execSync(`python "${pyScript}" "${imgPath}" "${sliceDir}"`, { stdio: "pipe" });
-          pythonSuccess = true;
-        } catch (err) {
-          console.warn(`⚠️ Python panel slicing failed/unsupported. Message: ${err.message}. Falling back to Node Sharp slicing.`);
-        }
+      // Optimize and convert via sharp
+      await sharp(imgPath)
+        .webp({ quality: 80 })
+        .toFile(outputFilePath);
 
-        if (pythonSuccess) {
-          // Read sliced files
-          const sliceFiles = fs.readdirSync(sliceDir).filter(f => !f.startsWith("."));
-          sliceFiles.sort((a, b) => collator.compare(a, b));
-          
-          for (const sliceFile of sliceFiles) {
-            const finalFilename = `page-${globalPageCounter}.webp`;
-            const destPath = path.join(mangaOutputDir, finalFilename);
-            fs.renameSync(path.join(sliceDir, sliceFile), destPath);
-            
-            const cdnUrl = `https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@manga-assets/manga/${MANGA_ID}/${CHAPTER_ID}/${finalFilename}`;
-            pageUrls.push(cdnUrl);
-            globalPageCounter++;
-          }
-        } else {
-          // Fallback Sharp slicing (vertical grid of target aspect ratio 1.4)
-          const sliceHeight = Math.floor(width * 1.4);
-          let currentY = 0;
-          while (currentY < height) {
-            let thisHeight = Math.min(sliceHeight, height - currentY);
-            // If remaining height is tiny, merge it with the last slice
-            if (height - (currentY + thisHeight) < width * 0.4) {
-              thisHeight = height - currentY;
-            }
-
-            const finalFilename = `page-${globalPageCounter}.webp`;
-            const destPath = path.join(mangaOutputDir, finalFilename);
-            
-            await sharp(imgPath)
-              .extract({ left: 0, top: currentY, width: width, height: thisHeight })
-              .webp({ quality: 80 })
-              .toFile(destPath);
-
-            const cdnUrl = `https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@manga-assets/manga/${MANGA_ID}/${CHAPTER_ID}/${finalFilename}`;
-            pageUrls.push(cdnUrl);
-            globalPageCounter++;
-            currentY += thisHeight;
-          }
-        }
-
-        // Clean up temporary slices directory
-        try {
-          fs.rmSync(sliceDir, { recursive: true, force: true });
-        } catch (rmErr) {
-          // ignore cleanup errors
-        }
-      } else {
-        // Standard normal manga page
-        const finalFilename = `page-${globalPageCounter}.webp`;
-        const destPath = path.join(mangaOutputDir, finalFilename);
-        
-        await sharp(imgPath)
-          .webp({ quality: 80 })
-          .toFile(destPath);
-
-        const cdnUrl = `https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@manga-assets/manga/${MANGA_ID}/${CHAPTER_ID}/${finalFilename}`;
-        pageUrls.push(cdnUrl);
-        globalPageCounter++;
-      }
+      // Construct the jsDelivr CDN URL
+      const cdnUrl = `https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@manga-assets/manga/${MANGA_ID}/${CHAPTER_ID}/${filename}`;
+      pageUrls.push(cdnUrl);
     }
 
-    console.log(`✅ All pages processed. Total pages generated: ${globalPageCounter - 1}`);
+    console.log("✅ All pages optimized and saved locally for commit.");
 
     // 6. Database writes (Supabase)
     console.log("💾 Writing chapter data to Supabase database...");

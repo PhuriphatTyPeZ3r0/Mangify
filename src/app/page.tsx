@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 /* Imported Google Material Symbols via layout.tsx */
 import { demoManga as initialManga } from "../data/mangaData";
-import { Manga, Theme, ReadingMode, ReadingProgress } from "../types";
+import { Manga, Theme, ReadingProgress } from "../types";
 import { supabase } from "../lib/supabaseClient";
 
 // Import Refactored Components
@@ -66,9 +66,7 @@ export default function Home() {
   const [isReaderOpen, setIsReaderOpen] = useState(false);
   const [activeManga, setActiveManga] = useState<Manga | null>(null);
   const [activeChapterId, setActiveChapterId] = useState("");
-  const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [scrollPercent, setScrollPercent] = useState(0);
-  const [readingMode, setReadingMode] = useState<ReadingMode>("vertical");
   const [showControls, setShowControls] = useState(true);
   const [isChapterPanelOpen, setIsChapterPanelOpen] = useState(false);
   
@@ -281,13 +279,8 @@ export default function Home() {
       }
     }
 
-    if (chapter && targetPageIndex < 0 && chapter.pages && chapter.pages.length > 0) {
-      targetPageIndex = chapter.pages.length - 1;
-    }
-
     setActiveManga(manga);
     setActiveChapterId(chapterId);
-    setCurrentPageIndex(targetPageIndex);
     setScrollPercent(scrollPct);
     setIsReaderOpen(true);
     resetControlsTimeout();
@@ -295,29 +288,24 @@ export default function Home() {
     // Log chapter read event
     logEvent("chapter_read", { manga_id: manga.id, chapter_id: chapterId });
 
-    // Auto-scroll logic if vertical
-    if (readingMode === "vertical") {
-      // Instantly try to reset scroll to top to prevent double scroll events
-      if (readerContentRef.current && scrollPct === 0) {
-        readerContentRef.current.scrollTop = 0;
-      }
-      setTimeout(() => {
-        if (readerContentRef.current) {
-          if (scrollPct > 0) {
-            const totalHeight = readerContentRef.current.scrollHeight;
-            readerContentRef.current.scrollTop = (scrollPct / 100) * totalHeight;
-          } else {
-            readerContentRef.current.scrollTop = 0;
-          }
-        }
-        // Release transitioning lock after DOM has stabilized
-        setTimeout(() => {
-          isTransitioningChapterRef.current = false;
-        }, 50);
-      }, 100);
-    } else {
-      isTransitioningChapterRef.current = false;
+    // Instantly try to reset scroll to top to prevent double scroll events
+    if (readerContentRef.current && scrollPct === 0) {
+      readerContentRef.current.scrollTop = 0;
     }
+    setTimeout(() => {
+      if (readerContentRef.current) {
+        if (scrollPct > 0) {
+          const totalHeight = readerContentRef.current.scrollHeight;
+          readerContentRef.current.scrollTop = (scrollPct / 100) * totalHeight;
+        } else {
+          readerContentRef.current.scrollTop = 0;
+        }
+      }
+      // Release transitioning lock after DOM has stabilized
+      setTimeout(() => {
+        isTransitioningChapterRef.current = false;
+      }, 50);
+    }, 100);
   };
 
   const handleReaderClose = () => {
@@ -337,7 +325,7 @@ export default function Home() {
   };
 
   const handleReaderScroll = () => {
-    if (!readerContentRef.current || readingMode !== "vertical" || isTransitioningChapterRef.current) return;
+    if (!readerContentRef.current || isTransitioningChapterRef.current) return;
     
     const { scrollTop, scrollHeight, clientHeight } = readerContentRef.current;
     if (scrollHeight <= clientHeight) return;
@@ -393,34 +381,6 @@ export default function Home() {
         console.error("Failed to sync progress:", err);
       }
     }, 1000);
-  };
-
-  const handleNavigateHorizontal = (dir: number) => {
-    if (!activeManga || !activeChapterId) return;
-    const ch = activeManga.chapters.find(c => c.id === activeChapterId);
-    if (!ch) return;
-
-    let nextIdx = currentPageIndex + dir;
-    if (nextIdx >= 0 && nextIdx < ch.pages.length) {
-      setCurrentPageIndex(nextIdx);
-      const pct = (nextIdx / (ch.pages.length - 1)) * 100;
-      setScrollPercent(pct);
-      debouncedSyncProgress(pct, nextIdx);
-      resetControlsTimeout();
-    } else if (nextIdx >= ch.pages.length) {
-      // Load next chapter
-      const curIdx = activeManga.chapters.findIndex(c => c.id === activeChapterId);
-      if (curIdx < activeManga.chapters.length - 1) {
-        handleLaunchReader(activeManga, activeManga.chapters[curIdx + 1].id, 0, 0);
-      }
-    } else if (nextIdx < 0) {
-      // Load prev chapter
-      const curIdx = activeManga.chapters.findIndex(c => c.id === activeChapterId);
-      if (curIdx > 0) {
-        const prevCh = activeManga.chapters[curIdx - 1];
-        handleLaunchReader(activeManga, prevCh.id, prevCh.pages.length - 1, 100);
-      }
-    }
   };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -1231,18 +1191,14 @@ export default function Home() {
         <ReaderOverlay 
           activeManga={activeManga}
           activeChapterId={activeChapterId}
-          currentPageIndex={currentPageIndex}
           scrollPercent={scrollPercent}
-          readingMode={readingMode}
           showControls={showControls}
           isChapterPanelOpen={isChapterPanelOpen}
           readerContentRef={readerContentRef}
           onClose={handleReaderClose}
           onReaderScroll={handleReaderScroll}
           onToggleControls={() => setShowControls(!showControls)}
-          onNavigateHorizontal={handleNavigateHorizontal}
           onLaunchReader={handleLaunchReader}
-          onSetReadingMode={setReadingMode}
           onToggleChapterPanel={setIsChapterPanelOpen}
           resetControlsTimeout={resetControlsTimeout}
         />

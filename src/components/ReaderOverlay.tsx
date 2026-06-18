@@ -1,21 +1,17 @@
 import React from "react";
-import { Manga, ReadingMode } from "../types";
+import { Manga } from "../types";
 
 interface ReaderOverlayProps {
   activeManga: Manga;
   activeChapterId: string;
-  currentPageIndex: number;
   scrollPercent: number;
-  readingMode: ReadingMode;
   showControls: boolean;
   isChapterPanelOpen: boolean;
   readerContentRef: React.RefObject<HTMLDivElement | null>;
   onClose: () => void;
   onReaderScroll: () => void;
   onToggleControls: () => void;
-  onNavigateHorizontal: (direction: number) => void;
   onLaunchReader: (manga: Manga, chapterId: string, pageIndex?: number, scrollPct?: number) => void;
-  onSetReadingMode: (mode: ReadingMode) => void;
   onToggleChapterPanel: (isOpen: boolean) => void;
   resetControlsTimeout: () => void;
 }
@@ -23,29 +19,19 @@ interface ReaderOverlayProps {
 export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({
   activeManga,
   activeChapterId,
-  currentPageIndex,
   scrollPercent,
-  readingMode,
   showControls,
   isChapterPanelOpen,
   readerContentRef,
   onClose,
   onReaderScroll,
   onToggleControls,
-  onNavigateHorizontal,
   onLaunchReader,
-  onSetReadingMode,
   onToggleChapterPanel,
   resetControlsTimeout,
 }) => {
   const currentChapter = activeManga.chapters.find(ch => ch.id === activeChapterId);
   const currentChapterIdx = activeManga.chapters.findIndex(ch => ch.id === activeChapterId);
-
-  const [isTallImage, setIsTallImage] = React.useState(false);
-
-  React.useEffect(() => {
-    setIsTallImage(false);
-  }, [currentPageIndex]);
 
   // Track finger movement to separate scrolling/swiping from clean tapping
   const touchMovedRef = React.useRef(false);
@@ -63,9 +49,7 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({
       touchMovedRef.current = false;
       return;
     }
-    if (readingMode === "vertical") {
-      onToggleControls();
-    }
+    onToggleControls();
   };
 
   return (
@@ -102,99 +86,23 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onClick={handleClick}
-        className="flex-1 w-full overflow-x-hidden relative flex flex-col items-center justify-start focus:outline-none"
-        style={{ 
-          overflowY: readingMode === "vertical" ? "auto" : "hidden" 
-        }}
+        className="flex-1 w-full overflow-x-hidden relative flex flex-col items-center justify-start focus:outline-none overflow-y-auto"
       >
-        {/* Click handlers overlay */}
-        {readingMode === "horizontal" && (
-          <div className="absolute inset-0 w-full h-full flex z-[999] pointer-events-none">
-            <div 
-              onClick={(e) => {
-                e.stopPropagation();
-                onNavigateHorizontal(-1);
-              }}
-              className="w-[20%] h-full cursor-w-resize pointer-events-auto"
-            />
-            <div 
-              onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (touchMovedRef.current) {
-                  touchMovedRef.current = false;
-                  return;
-                }
-                onToggleControls();
-              }}
-              className="w-[60%] h-full cursor-pointer pointer-events-auto"
-            />
-            <div 
-              onClick={(e) => {
-                e.stopPropagation();
-                onNavigateHorizontal(1);
-              }}
-              className="w-[20%] h-full cursor-e-resize pointer-events-auto"
-            />
-          </div>
-        )}
-
         {/* Vertical Scroll Layout */}
-        {readingMode === "vertical" ? (
-          <div className="w-full max-w-[700px] mx-auto flex flex-col relative z-10">
-            {currentChapter?.pages.map((url, idx) => (
-              <div key={idx} className="w-full relative min-h-[400px] bg-surface/30">
-                <div className="absolute inset-0 skeleton opacity-20" />
-                <img 
-                  src={url} 
-                  alt={`Page ${idx + 1}`}
-                  className="w-full h-auto block manga-page-img relative z-10 transition-opacity duration-500 opacity-0"
-                  loading={idx > 2 ? "lazy" : "eager"}
-                  onLoad={(e) => (e.target as HTMLImageElement).classList.replace("opacity-0", "opacity-100")}
-                />
-              </div>
-            ))}
-          </div>
-        ) : (
-          /* Horizontal Page Switch Layout */
-          <div className="w-full h-full flex justify-center items-center p-4">
-            <div 
-              className={`relative flex items-center justify-center rounded-lg shadow-md transition-all duration-300 ${
-                isTallImage 
-                  ? "w-full max-w-[650px] h-full max-h-[92vh] overflow-y-auto overflow-x-hidden scrollbar-thin bg-surface/10" 
-                  : "max-w-[90%] max-h-[95%] overflow-hidden"
-              }`}
-            >
-              <div className="absolute inset-0 skeleton opacity-10 pointer-events-none" />
-              {currentChapter && (
-                <img 
-                  key={currentPageIndex} // Key trigger for re-render animation
-                  src={currentChapter.pages[currentPageIndex]} 
-                  alt={`Page ${currentPageIndex + 1}`}
-                  className={`manga-page-img animate-in fade-in slide-in-from-right-4 duration-300 relative z-10 opacity-0 transition-opacity ${
-                    isTallImage 
-                      ? "w-full h-auto object-contain block" 
-                      : "max-h-[92vh] max-w-full object-contain"
-                  }`}
-                  onLoad={(e) => {
-                    const img = e.target as HTMLImageElement;
-                    img.classList.replace("opacity-0", "opacity-100");
-                    if (img.naturalHeight / img.naturalWidth > 1.8) {
-                      setIsTallImage(true);
-                    }
-                  }}
-                />
-              )}
+        <div className="w-full max-w-[700px] mx-auto flex flex-col relative z-10">
+          {currentChapter?.pages.map((url, idx) => (
+            <div key={idx} className="w-full relative min-h-[400px] bg-surface/30">
+              <div className="absolute inset-0 skeleton opacity-20" />
+              <img 
+                src={url} 
+                alt={`Page ${idx + 1}`}
+                className="w-full h-auto block manga-page-img relative z-10 transition-opacity duration-500 opacity-0"
+                loading={idx > 2 ? "lazy" : "eager"}
+                onLoad={(e) => (e.target as HTMLImageElement).classList.replace("opacity-0", "opacity-100")}
+              />
             </div>
-            {/* Page Indicator */}
-            {currentChapter && (
-              <div className="fixed bottom-6 right-6 bg-surface/80 border border-border backdrop-blur-sm px-3 py-1.5 rounded-lg text-xs prompt-semibold z-[1005]">
-                {currentPageIndex + 1} / {currentChapter.pages.length}
-              </div>
-            )}
-          </div>
-        )}
+          ))}
+        </div>
       </div>
 
       {/* Bottom Control Bar */}
@@ -202,16 +110,7 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({
         (showControls || isChapterPanelOpen) ? "translate-y-0" : "translate-y-full"
       }`}>
         <div className="flex items-center gap-2">
-          <span className="prompt-light text-xs uppercase tracking-wider opacity-60 hidden sm:inline">Layout:</span>
-          <button 
-            onClick={() => {
-              onSetReadingMode(readingMode === "vertical" ? "horizontal" : "vertical");
-              resetControlsTimeout();
-            }}
-            className="bg-surface border border-border text-foreground text-xs prompt-medium px-4 py-1.5 rounded-full hover:border-accent transition-colors cursor-pointer"
-          >
-            {readingMode === "vertical" ? "Webtoon (Vertical)" : "Manga (Horizontal)"}
-          </button>
+          {/* Layout set to vertical scroll layout by default */}
         </div>
 
         {/* Chapter Selector Dropdown */}
