@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   title: "Mangify - อ่านมังงะและเว็บตูนฟรี",
   description: "Mangify แพลตฟอร์มอ่านมังงะและเว็บตูนออนไลน์ที่ดีที่สุด รวบรวมผลงานยอดนิยมแปลไทยไว้ที่นี่ที่เดียว",
   icons: {
-    icon: "/favicon.ico",
+    icon: "/img/web_icon/Mangify.png",
   },
 };
 

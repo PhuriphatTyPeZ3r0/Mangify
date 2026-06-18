@@ -41,6 +41,12 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({
   const currentChapter = activeManga.chapters.find(ch => ch.id === activeChapterId);
   const currentChapterIdx = activeManga.chapters.findIndex(ch => ch.id === activeChapterId);
 
+  const [isTallImage, setIsTallImage] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsTallImage(false);
+  }, [currentPageIndex]);
+
   // Track finger movement to separate scrolling/swiping from clean tapping
   const touchMovedRef = React.useRef(false);
 
@@ -73,9 +79,9 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({
           <button 
             onClick={onClose}
             className="flex items-center gap-1 prompt-medium text-sm hover:translate-x-[-3px] transition-transform flex items-center cursor-pointer"
+            title="กลับไปหน้าหลัก"
           >
             <span className="material-symbols-outlined text-[20px]">chevron_left</span>
-            Library
           </button>
           <h2 className="prompt-semibold text-md truncate max-w-[200px] sm:max-w-md">
             {activeManga.title} <span className="prompt-light text-xs opacity-60 ml-2">({currentChapter?.title})</span>
@@ -153,15 +159,31 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({
         ) : (
           /* Horizontal Page Switch Layout */
           <div className="w-full h-full flex justify-center items-center p-4">
-            <div className="max-w-[90%] max-h-[95%] flex items-center justify-center relative overflow-hidden rounded-lg">
-              <div className="absolute inset-0 skeleton opacity-10" />
+            <div 
+              className={`relative flex items-center justify-center rounded-lg shadow-md transition-all duration-300 ${
+                isTallImage 
+                  ? "w-full max-w-[650px] h-full max-h-[92vh] overflow-y-auto overflow-x-hidden scrollbar-thin bg-surface/10" 
+                  : "max-w-[90%] max-h-[95%] overflow-hidden"
+              }`}
+            >
+              <div className="absolute inset-0 skeleton opacity-10 pointer-events-none" />
               {currentChapter && (
                 <img 
                   key={currentPageIndex} // Key trigger for re-render animation
                   src={currentChapter.pages[currentPageIndex]} 
                   alt={`Page ${currentPageIndex + 1}`}
-                  className="max-h-[92vh] max-w-full object-contain shadow-md manga-page-img animate-in fade-in slide-in-from-right-4 duration-300 relative z-10"
-                  onLoad={(e) => (e.target as HTMLImageElement).classList.add("opacity-100")}
+                  className={`manga-page-img animate-in fade-in slide-in-from-right-4 duration-300 relative z-10 opacity-0 transition-opacity ${
+                    isTallImage 
+                      ? "w-full h-auto object-contain block" 
+                      : "max-h-[92vh] max-w-full object-contain"
+                  }`}
+                  onLoad={(e) => {
+                    const img = e.target as HTMLImageElement;
+                    img.classList.replace("opacity-0", "opacity-100");
+                    if (img.naturalHeight / img.naturalWidth > 1.8) {
+                      setIsTallImage(true);
+                    }
+                  }}
                 />
               )}
             </div>

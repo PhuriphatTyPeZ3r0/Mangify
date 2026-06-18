@@ -37,9 +37,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           onClick={() => handleTabClick("originals")}
           className="flex items-center gap-2 group cursor-pointer"
         >
-          <span className="material-symbols-outlined text-accent text-3xl transition-transform group-hover:scale-110 group-hover:rotate-[-5deg]">
-            book_5
-          </span>
+          <img 
+            src="/img/web_icon/Mangify.png" 
+            alt="Mangify Logo" 
+            className="w-8 h-8 object-contain transition-transform group-hover:scale-110 group-hover:rotate-[-5deg]"
+          />
           <span className="prompt-bold text-2xl lg:text-3xl tracking-tight bg-gradient-to-r from-foreground to-accent bg-clip-text text-transparent opacity-95">
             Mangify
           </span>
