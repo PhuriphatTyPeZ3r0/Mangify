@@ -22,20 +22,68 @@ if (missingEnv.length > 0) {
   process.exit(1);
 }
 
+const cleanEnvVar = (val) => {
+  if (!val) return "";
+  return val.replace(/^['"]|['"]$/g, "").trim();
+};
+
+function getStandardizedChapterId(mangaId, chapterUrlOrSegment, title) {
+  const decoded = decodeURIComponent(chapterUrlOrSegment);
+  
+  // Extract the last path segment if it's a full URL
+  let segment = decoded;
+  if (segment.includes("/")) {
+    segment = segment.split('/').filter(Boolean).pop();
+  }
+  
+  let numStr = null;
+
+  const patterns = [
+    /[-_]ep[-_](\d+[\.\-]?\d*)/i,
+    /[-_]ch[-_](\d+[\.\-]?\d*)/i,
+    /[-_]ตอนที่[-_](\d+[\.\-]?\d*)/i,
+    /[-_]ch(\d+)/i,
+    /[-_](\d+[\.\-]?\d*)$/
+  ];
+
+  for (const pat of patterns) {
+    const match = segment.match(pat);
+    if (match) {
+      numStr = match[1].replace("-", ".");
+      break;
+    }
+  }
+
+  if (!numStr && title) {
+    const titleMatch = title.match(/(\d+[\.\-]?\d*)/);
+    if (titleMatch) {
+      numStr = titleMatch[1].replace("-", ".");
+    }
+  }
+
+  if (!numStr) {
+    // strip out the mangaId if it is present at the start of segment to avoid redundancy
+    let suffix = segment;
+    if (suffix.startsWith(mangaId)) {
+      suffix = suffix.substring(mangaId.length);
+    }
+    suffix = suffix.replace(/^[-_]+/, "");
+    return `${mangaId}-ch-${suffix.toLowerCase()}`;
+  }
+
+  return `${mangaId}-ch-${numStr}`;
+}
+
+const MANGA_ID = decodeURIComponent(cleanEnvVar(process.env.MANGA_ID));
+const RAW_CHAPTER_ID = decodeURIComponent(cleanEnvVar(process.env.CHAPTER_ID));
+const CHAPTER_TITLE = cleanEnvVar(process.env.CHAPTER_TITLE);
+const CHAPTER_ID = getStandardizedChapterId(MANGA_ID, RAW_CHAPTER_ID, CHAPTER_TITLE);
 const {
-  MANGA_ID,
-  CHAPTER_ID,
-  CHAPTER_TITLE,
   ZIP_URL,
   NEXT_PUBLIC_SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
   GITHUB_REPOSITORY
 } = process.env;
-
-const cleanEnvVar = (val) => {
-  if (!val) return "";
-  return val.replace(/^['"]|['"]$/g, "").trim();
-};
 
 let NEXT_PUBLIC_SUPABASE_URL_CLEAN = cleanEnvVar(process.env.NEXT_PUBLIC_SUPABASE_URL);
 const SUPABASE_SERVICE_ROLE_KEY_CLEAN = cleanEnvVar(process.env.SUPABASE_SERVICE_ROLE_KEY);

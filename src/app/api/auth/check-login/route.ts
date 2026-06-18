@@ -33,21 +33,7 @@ export async function POST(request: NextRequest) {
 
     const userId = authData.user.id;
 
-    // Check if 2FA is enabled in user profiles
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .select("two_factor_enabled")
-      .eq("id", userId)
-      .single();
-
-    const twoFactorEnabled = profile ? !!profile.two_factor_enabled : false;
-
-    if (!twoFactorEnabled) {
-      // 2FA is disabled, tell client to proceed with normal Supabase login
-      return NextResponse.json({ requires2FA: false });
-    }
-
-    // 2FA is enabled: Generate 6-digit verification code
+    // 2FA is now mandatory for every login attempt: Generate 6-digit verification code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes expiry
 

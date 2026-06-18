@@ -243,9 +243,10 @@ export default function Home() {
 
   const handleLaunchReader = async (manga: Manga, chapterId: string, pageIndex = 0, scrollPct = 0) => {
     isTransitioningChapterRef.current = true;
-    
     // Find the chapter to check if pages need to be loaded on-demand
     const chapter = manga.chapters.find(c => c.id === chapterId);
+    let targetPageIndex = pageIndex;
+
     if (chapter && (!chapter.pages || chapter.pages.length === 0)) {
       try {
         const res = await fetch(`/api/chapters?id=${chapterId}`);
@@ -272,16 +273,21 @@ export default function Home() {
           isTransitioningChapterRef.current = false;
           return;
         }
-      } catch (err: any) {
-        alert("เกิดข้อผิดพลาดในการโหลดหน้าการ์ตูน: " + err.message);
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : "Unknown error";
+        alert("เกิดข้อผิดพลาดในการโหลดหน้าการ์ตูน: " + errorMessage);
         isTransitioningChapterRef.current = false;
         return;
       }
     }
 
+    if (chapter && targetPageIndex < 0 && chapter.pages && chapter.pages.length > 0) {
+      targetPageIndex = chapter.pages.length - 1;
+    }
+
     setActiveManga(manga);
     setActiveChapterId(chapterId);
-    setCurrentPageIndex(pageIndex);
+    setCurrentPageIndex(targetPageIndex);
     setScrollPercent(scrollPct);
     setIsReaderOpen(true);
     resetControlsTimeout();

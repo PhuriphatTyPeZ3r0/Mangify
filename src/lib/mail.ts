@@ -40,20 +40,49 @@ export const send2FACodeEmail = async (toEmail: string, code: string) => {
       to: toEmail,
       subject: `🛡️ รหัสยืนยัน 2FA สำหรับเข้าสู่ระบบ Mangify: ${code}`,
       html: `
-        <div style="font-family: 'Prompt', sans-serif; padding: 30px; max-width: 550px; margin: auto; border: 1px solid #e6dfd5; border-radius: 16px; background-color: #faf8f5;">
-          <h2 style="color: #d35400; text-align: center; margin-bottom: 24px; font-weight: 700;">ระบบความปลอดภัย Mangify</h2>
-          <p style="font-size: 14px; color: #2b2621; line-height: 1.6;">ระบบตรวจพบว่าคุณกำลังเข้าสู่ระบบ Mangify บัญชีของคุณได้รับการเปิดใช้งานการยืนยันตัวตนแบบสองขั้นตอน (2FA)</p>
-          <p style="font-size: 14px; color: #2b2621; line-height: 1.6;">โปรดใช้รหัสยืนยันด้านล่างนี้เพื่อทำการลงชื่อเข้าใช้งาน:</p>
+        <div style="font-family: 'Prompt', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px 20px; max-width: 500px; margin: auto; border: 1px solid #e6dfd5; border-radius: 24px; background-color: #faf8f5;">
           
-          <div style="font-size: 36px; font-weight: 800; color: #d35400; text-align: center; letter-spacing: 6px; margin: 30px 0; padding: 15px; background-color: #f3efe9; border-radius: 12px; border: 1px solid #e6dfd5; max-width: 200px; margin-left: auto; margin-right: auto;">
-            ${code}
+          <!-- Logo / Header -->
+          <div style="text-align: center; margin-bottom: 30px;">
+            <div style="font-size: 26px; font-weight: 800; color: #d35400; letter-spacing: -0.5px; margin-bottom: 2px;">MANGIFY</div>
+            <div style="font-size: 10px; font-weight: 600; color: #a08c75; letter-spacing: 2px; text-transform: uppercase;">Security Center</div>
           </div>
           
-          <p style="font-size: 11px; color: #d35400; background-color: #faf8f5; text-align: center; font-weight: 500; margin-top: 10px;">
-            ⚠️ รหัสผ่านนี้จะหมดอายุภายใน 5 นาที
-          </p>
-          <hr style="border: 0; border-top: 1px solid #e6dfd5; margin: 24px 0;" />
-          <p style="font-size: 11px; color: #888; line-height: 1.4;">หากคุณไม่ได้ขอดำเนินการนี้ โปรดเปลี่ยนรหัสผ่านบัญชีผู้ใช้ของคุณทันทีเพื่อความปลอดภัยของข้อมูล</p>
+          <!-- Main Content Card -->
+          <div style="background-color: #f3efe9; border-radius: 20px; border: 1px solid #e6dfd5; padding: 30px; text-align: center; margin-bottom: 25px;">
+            <div style="display: inline-block; padding: 12px; background-color: rgba(211, 84, 0, 0.08); border-radius: 16px; margin-bottom: 16px;">
+              <span style="font-size: 28px; line-height: 1;">🛡️</span>
+            </div>
+            
+            <h3 style="font-size: 16px; font-weight: 700; color: #2b2621; margin: 0 0 8px 0;">การยืนยันตัวตนแบบสองขั้นตอน (2FA)</h3>
+            <p style="font-size: 12px; color: #5a524a; line-height: 1.6; margin: 0 0 20px 0; padding: 0 10px;">
+              ระบบตรวจพบความพยายามในการเข้าสู่ระบบด้วยบัญชีของคุณ โปรดกรอกรหัสยืนยัน 6 หลักต่อไปนี้เพื่อลงชื่อเข้าใช้งานอย่างปลอดภัย
+            </p>
+            
+            <!-- 2FA Code Badge -->
+            <div style="font-size: 36px; font-weight: 800; color: #d35400; letter-spacing: 6px; padding: 12px 24px; background-color: #faf8f5; border-radius: 14px; border: 1px solid #e6dfd5; display: inline-block; min-width: 160px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.01);">
+              ${code}
+            </div>
+            
+            <p style="font-size: 11px; color: #d35400; font-weight: 600; margin: 16px 0 0 0;">
+              ⏳ รหัสนี้จะหมดอายุการใช้งานภายใน 5 นาที
+            </p>
+          </div>
+          
+          <!-- Security Tip / Warning -->
+          <div style="padding: 0 10px;">
+            <p style="font-size: 10px; color: #8a7e72; line-height: 1.5; margin: 0 0 16px 0;">
+              <strong>⚠️ ข้อควรระวัง:</strong> ห้ามส่งต่อรหัสยืนยันนี้ให้แก่บุคคลอื่นโดยเด็ดขาด เจ้าหน้าที่ของ Mangify จะไม่ขอรหัสผ่านหรือรหัส 2FA ของคุณไม่ว่าในกรณีใดๆ
+            </p>
+            
+            <hr style="border: 0; border-top: 1px solid #e6dfd5; margin: 16px 0;" />
+            
+            <p style="font-size: 10px; color: #a09080; text-align: center; margin: 0; line-height: 1.4;">
+              หากคุณไม่ได้ขอดำเนินการเข้าสู่ระบบ โปรดเพิกเฉยต่ออีเมลฉบับนี้และแนะนำให้เปลี่ยนรหัสผ่านทันที<br />
+              © 2026 Mangify. All rights reserved.
+            </p>
+          </div>
+          
         </div>
       `,
     };

@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Missing chapter ID parameter 'id'" }, { status: 400 });
     }
 
-    // Fetch only the 'pages' column for the requested chapter
+    // Fetch only the 'pages' column for the requested chapter using the standardized ID
     const { data, error } = await supabaseAdmin
       .from("chapters")
       .select("pages")
@@ -23,8 +23,9 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ pages: data.pages });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("❌ Failed to fetch chapter pages:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const errorMessage = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

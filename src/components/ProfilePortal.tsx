@@ -290,23 +290,17 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
                 ระบบความปลอดภัยเพิ่มเติม
               </h3>
               
-              <div className="flex items-center justify-between p-4 bg-background/50 border border-border/60 rounded-2xl">
+              <div className="flex items-center justify-between p-4 bg-accent/5 border border-accent/20 rounded-2xl">
                 <div className="text-left pr-4">
-                  <h4 className="prompt-semibold text-xs text-foreground">การยืนยันตัวตนแบบสองขั้นตอน (2FA)</h4>
-                  <p className="prompt-light text-[11px] opacity-60 mt-0.5">
-                    ส่งรหัสยืนยัน 6 หลักไปที่ Gmail ของคุณทุกครั้งเมื่อทำเข้าสู่ระบบใหม่ เพื่อความปลอดภัยของข้อมูลขั้นสูงสุด
+                  <h4 className="prompt-semibold text-xs text-accent">การยืนยันตัวตนแบบสองขั้นตอน (2FA) ถูกเปิดใช้งานถาวร</h4>
+                  <p className="prompt-light text-[11px] opacity-75 mt-0.5 text-foreground/80">
+                    เพื่อความปลอดภัยสูงสุดของบัญชีสมาชิก ระบบจะส่งรหัสผ่าน 6 หลักเข้า Gmail ของคุณทุกครั้งเมื่อเข้าสู่ระบบใหม่เสมอ
                   </p>
                 </div>
-                {/* Custom Toggle Switch */}
-                <label className="relative inline-flex items-center cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={twoFactorEnabled}
-                    onChange={handle2FAToggleChange}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
-                </label>
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-accent text-white rounded-full text-[10px] prompt-semibold shadow-xs shrink-0 select-none">
+                  <span className="material-symbols-outlined text-[12px] fill">verified_user</span>
+                  เปิดใช้งานแล้ว
+                </div>
               </div>
             </div>
 

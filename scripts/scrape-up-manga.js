@@ -97,6 +97,53 @@ function cleanGenres(genres) {
   return Array.from(new Set(mapped));
 }
 
+function getStandardizedChapterId(mangaId, chapterUrlOrSegment, title) {
+  const decoded = decodeURIComponent(chapterUrlOrSegment);
+  
+  // Extract the last path segment if it's a full URL
+  let segment = decoded;
+  if (segment.includes("/")) {
+    segment = segment.split('/').filter(Boolean).pop();
+  }
+  
+  let numStr = null;
+
+  const patterns = [
+    /[-_]ep[-_](\d+[\.\-]?\d*)/i,
+    /[-_]ch[-_](\d+[\.\-]?\d*)/i,
+    /[-_]ตอนที่[-_](\d+[\.\-]?\d*)/i,
+    /[-_]ch(\d+)/i,
+    /[-_](\d+[\.\-]?\d*)$/
+  ];
+
+  for (const pat of patterns) {
+    const match = segment.match(pat);
+    if (match) {
+      numStr = match[1].replace("-", ".");
+      break;
+    }
+  }
+
+  if (!numStr && title) {
+    const titleMatch = title.match(/(\d+[\.\-]?\d*)/);
+    if (titleMatch) {
+      numStr = titleMatch[1].replace("-", ".");
+    }
+  }
+
+  if (!numStr) {
+    // strip out the mangaId if it is present at the start of segment to avoid redundancy
+    let suffix = segment;
+    if (suffix.startsWith(mangaId)) {
+      suffix = suffix.substring(mangaId.length);
+    }
+    suffix = suffix.replace(/^[-_]+/, "");
+    return `${mangaId}-ch-${suffix.toLowerCase()}`;
+  }
+
+  return `${mangaId}-ch-${numStr}`;
+}
+
 // --- Stats Tracking ---
 const stats = {
   mangasProcessed: 0,
@@ -148,7 +195,9 @@ async function scrape() {
   try {
     await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     console.log(`🔗 Navigating to ${BASE_URL}...`);
-    await page.goto(BASE_URL, { waitUntil: "networkidle2" });
+    
+    // Use domcontentloaded and custom timeout to avoid hanging on ad networks
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded", timeout: 25000 });
 
     // Scroll to trigger lazy loading
     await page.evaluate(() => window.scrollBy(0, window.innerHeight));
@@ -176,173 +225,189 @@ async function scrape() {
     console.log(`📂 Found ${mangaLinks.length} potential manga links.`);
     
     for (const mangaUrl of mangaLinks) {
-      console.log(`\n📖 Scraping Manga: ${mangaUrl}`);
-      await new Promise(r => setTimeout(r, 1000));
-      await page.goto(mangaUrl, { waitUntil: "networkidle2" });
+      try {
+        console.log(`\n📖 Scraping Manga: ${mangaUrl}`);
+        await new Promise(r => setTimeout(r, 1000));
+        await page.goto(mangaUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
+        await page.waitForSelector('.bxcl, .cl, .chapter-list, .listing-chapters, h1', { timeout: 10000 }).catch(() => {});
 
-      const mangaData = await page.evaluate((url) => {
-        const h1Tags = Array.from(document.querySelectorAll('h1'));
-        const titleTag = h1Tags.find(h => !h.textContent.includes("อ่านมังงะใหม่")) || h1Tags[0];
-        const title = titleTag?.textContent?.trim() || "";
-        const description = document.querySelector('.entry-content, .info-desc, .summary-content')?.textContent?.trim() || "";
-        const cover = document.querySelector('.thumb img')?.src || document.querySelector('.summary_image img')?.src || "";
-        
-        // Extract from Info Table
-        const infoRows = Array.from(document.querySelectorAll('.infotable tr'));
-        let status = "Ongoing";
-        let type = "Manhwa";
-        let releaseYear = null;
-        let author = "";
-        let artist = "";
-        let viewsCount = "0";
+        const mangaData = await page.evaluate((url) => {
+          const h1Tags = Array.from(document.querySelectorAll('h1'));
+          const titleTag = h1Tags.find(h => !h.textContent.includes("อ่านมังงะใหม่")) || h1Tags[0];
+          const title = titleTag?.textContent?.trim() || "";
+          const description = document.querySelector('.entry-content, .info-desc, .summary-content')?.textContent?.trim() || "";
+          const cover = document.querySelector('.thumb img')?.src || document.querySelector('.summary_image img')?.src || "";
+          
+          // Extract from Info Table
+          const infoRows = Array.from(document.querySelectorAll('.infotable tr'));
+          let status = "Ongoing";
+          let type = "Manhwa";
+          let releaseYear = null;
+          let author = "";
+          let artist = "";
+          let viewsCount = "0";
 
-        infoRows.forEach(row => {
-          const cells = row.querySelectorAll('td');
-          if (cells.length === 2) {
-            const label = cells[0].textContent.trim();
-            const value = cells[1].textContent.trim();
+          infoRows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length === 2) {
+              const label = cells[0].textContent.trim();
+              const value = cells[1].textContent.trim();
 
-            if (label.includes("สถานะ")) {
-              status = value;
-            } else if (label.includes("ประเภท")) {
-              type = value;
-            } else if (label.includes("ปีที่ปล่อย")) {
-              const yearNum = parseInt(value, 10);
-              if (!isNaN(yearNum)) releaseYear = yearNum;
-            } else if (label.includes("ผู้แต่ง")) {
-              author = value;
-            } else if (label.includes("ผู้เขียน")) {
-              artist = value;
-            } else if (label.includes("Views")) {
-              viewsCount = value;
+              if (label.includes("สถานะ")) {
+                status = value;
+              } else if (label.includes("ประเภท")) {
+                type = value;
+              } else if (label.includes("ปีที่ปล่อย")) {
+                const yearNum = parseInt(value, 10);
+                if (!isNaN(yearNum)) releaseYear = yearNum;
+              } else if (label.includes("ผู้แต่ง")) {
+                author = value;
+              } else if (label.includes("ผู้เขียน")) {
+                artist = value;
+              } else if (label.includes("Views")) {
+                viewsCount = value;
+              }
             }
-          }
-        });
-
-        // Fallback for author if not found in table
-        if (!author) {
-          author = document.querySelector('.spe span:nth-child(2)')?.textContent?.replace('Author:', '').trim() || "";
-        }
-
-        // Extract Alternative Title
-        const originalTitle = document.querySelector('.seriestualt')?.textContent?.trim() || "";
-
-        // Extract Followers Count
-        const followersText = document.querySelector('.bmc')?.textContent || "";
-
-        // Extract Genres
-        const genres = Array.from(document.querySelectorAll('.seriestugenre a'))
-          .map(a => a.textContent.trim())
-          .filter(Boolean);
-        
-        const chapters = Array.from(document.querySelectorAll('.bxcl ul li a, .cl ul li a, .chapter-list ul li a, .listing-chapters ul li a'))
-          .map(a => ({
-            id: a.href.split('/').filter(Boolean).pop(),
-            title: a.textContent?.trim() || "",
-            url: a.href
-          }));
-
-        const id = url.split('/').filter(Boolean).pop();
-        return { id, title, description, cover, author, artist, status, type, releaseYear, viewsCount, originalTitle, genres, followersText, chapters };
-      }, mangaUrl);
-
-      if (!mangaData.id || !mangaData.title) {
-        console.log("⚠️ Skipping: Could not parse title.");
-        continue;
-      }
-
-      stats.mangasProcessed++;
-      console.log(`✅ Extracted: ${mangaData.title} (${mangaData.chapters.length} chapters)`);
-
-      // Popularity score calculation helper functions
-      const parseViews = (viewsStr) => {
-        if (!viewsStr) return 0;
-        const cleanStr = viewsStr.trim().toLowerCase();
-        if (cleanStr.includes('m')) {
-          return parseFloat(cleanStr.replace('m', '')) * 1000000;
-        }
-        if (cleanStr.includes('k')) {
-          return parseFloat(cleanStr.replace('k', '')) * 1000;
-        }
-        return parseInt(cleanStr.replace(/\D/g, ""), 10) || 0;
-      };
-
-      const parseFollowers = (followersStr) => {
-        if (!followersStr) return 0;
-        return parseInt(followersStr.replace(/\D/g, ""), 10) || 0;
-      };
-
-      const rawViews = parseViews(mangaData.viewsCount);
-      const rawFollowers = parseFollowers(mangaData.followersText);
-      const popularityScore = Math.round((rawViews * 0.7) + (rawFollowers * 0.3));
-
-      console.log(`   └─ 📈 Stats: Views = ${rawViews.toLocaleString()} (${mangaData.viewsCount}), Followers = ${rawFollowers.toLocaleString()}, Popularity Score = ${popularityScore}`);
-
-      await supabaseAdmin.from("manga").upsert({
-        id: mangaData.id,
-        title: mangaData.title,
-        author: mangaData.author || null,
-        cover: mangaData.cover || null,
-        description: mangaData.description || null,
-        genres: cleanGenres(mangaData.genres || []),
-        is_original: true,
-        popularity: popularityScore,
-        original_title: mangaData.originalTitle || null,
-        artist: mangaData.artist || null,
-        status: mangaData.status || 'Ongoing',
-        manga_type: mangaData.type || 'Manhwa',
-        release_year: mangaData.releaseYear || null,
-        views_count: mangaData.viewsCount || '0'
-      });
-
-      const chaptersToSync = mangaData.chapters.reverse();
-
-      for (const ch of chaptersToSync) {
-        const chapterId = `${mangaData.id}-${ch.id}`;
-        
-        const { data: existing } = await supabaseAdmin.from("chapters").select("id").eq("id", chapterId).single();
-        if (existing) continue;
-
-        console.log(`   └─ 📑 Syncing Chapter: ${ch.title}`);
-        
-        // Clean title and extract date
-        let cleanTitle = ch.title;
-        let releaseDate = null;
-        const dateRegex = /(มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)\s+\d+,\s+\d+/i;
-        const dateMatch = ch.title.match(dateRegex);
-        if (dateMatch) {
-          cleanTitle = ch.title.replace(dateMatch[0], "").trim();
-          releaseDate = dateMatch[0];
-        }
-
-        await new Promise(r => setTimeout(r, 500));
-        await page.goto(ch.url, { waitUntil: "networkidle2" });
-
-        const pageImages = await page.evaluate(() => {
-          const selectors = ['#readerarea img', '.reader-area img', '.v_content img', '.reading-content img', '.page-break img'];
-          let found = [];
-          for (const sel of selectors) {
-            const imgs = Array.from(document.querySelectorAll(sel)).map(img => img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy-src')).filter(Boolean);
-            if (imgs.length > 0) { found = imgs; break; }
-          }
-          if (found.length === 0) {
-            found = Array.from(document.querySelectorAll('img')).map(img => img.src || img.getAttribute('data-src')).filter(src => src && (src.includes('uploads') || src.includes('manga'))).filter(src => !src.includes('logo') && !src.includes('avatar'));
-          }
-          return found;
-        });
-
-        if (pageImages.length > 0) {
-          await supabaseAdmin.from("chapters").upsert({
-            id: chapterId,
-            manga_id: mangaData.id,
-            title: cleanTitle,
-            release_date: releaseDate,
-            pages: pageImages,
-            created_at: new Date().toISOString()
           });
-          stats.chaptersSynced++;
-          console.log(`   ✅ Success: ${pageImages.length} pages.`);
+
+          // Fallback for author if not found in table
+          if (!author) {
+            author = document.querySelector('.spe span:nth-child(2)')?.textContent?.replace('Author:', '').trim() || "";
+          }
+
+          // Extract Alternative Title
+          const originalTitle = document.querySelector('.seriestualt')?.textContent?.trim() || "";
+
+          // Extract Followers Count
+          const followersText = document.querySelector('.bmc')?.textContent || "";
+
+          // Extract Genres
+          const genres = Array.from(document.querySelectorAll('.seriestugenre a'))
+            .map(a => a.textContent.trim())
+            .filter(Boolean);
+          
+          const chapters = Array.from(document.querySelectorAll('.bxcl ul li a, .cl ul li a, .chapter-list ul li a, .listing-chapters ul li a'))
+            .map(a => ({
+              id: decodeURIComponent(a.href.split('/').filter(Boolean).pop()),
+              title: a.textContent?.trim() || "",
+              url: a.href
+            }));
+
+          const id = decodeURIComponent(url.split('/').filter(Boolean).pop());
+          return { id, title, description, cover, author, artist, status, type, releaseYear, viewsCount, originalTitle, genres, followersText, chapters };
+        }, mangaUrl);
+
+        if (!mangaData.id || !mangaData.title) {
+          console.log("⚠️ Skipping: Could not parse title.");
+          continue;
         }
+
+        stats.mangasProcessed++;
+        console.log(`✅ Extracted: ${mangaData.title} (${mangaData.chapters.length} chapters)`);
+
+        // Popularity score calculation helper functions
+        const parseViews = (viewsStr) => {
+          if (!viewsStr) return 0;
+          const cleanStr = viewsStr.trim().toLowerCase();
+          if (cleanStr.includes('m')) {
+            return parseFloat(cleanStr.replace('m', '')) * 1000000;
+          }
+          if (cleanStr.includes('k')) {
+            return parseFloat(cleanStr.replace('k', '')) * 1000;
+          }
+          return parseInt(cleanStr.replace(/\D/g, ""), 10) || 0;
+        };
+
+        const parseFollowers = (followersStr) => {
+          if (!followersStr) return 0;
+          return parseInt(followersStr.replace(/\D/g, ""), 10) || 0;
+        };
+
+        const rawViews = parseViews(mangaData.viewsCount);
+        const rawFollowers = parseFollowers(mangaData.followersText);
+        const popularityScore = Math.round((rawViews * 0.7) + (rawFollowers * 0.3));
+
+        console.log(`   └─ 📈 Stats: Views = ${rawViews.toLocaleString()} (${mangaData.viewsCount}), Followers = ${rawFollowers.toLocaleString()}, Popularity Score = ${popularityScore}`);
+
+        await supabaseAdmin.from("manga").upsert({
+          id: mangaData.id,
+          title: mangaData.title,
+          author: mangaData.author || null,
+          cover: mangaData.cover || null,
+          description: mangaData.description || null,
+          genres: cleanGenres(mangaData.genres || []),
+          is_original: true,
+          popularity: popularityScore,
+          original_title: mangaData.originalTitle || null,
+          artist: mangaData.artist || null,
+          status: mangaData.status || 'Ongoing',
+          manga_type: mangaData.type || 'Manhwa',
+          release_year: mangaData.releaseYear || null,
+          views_count: mangaData.viewsCount || '0'
+        });
+
+        const chaptersToSync = mangaData.chapters.reverse();
+
+        for (const ch of chaptersToSync) {
+          const chapterId = getStandardizedChapterId(mangaData.id, ch.id, ch.title);
+          
+          const { data: existing } = await supabaseAdmin.from("chapters").select("id").eq("id", chapterId).single();
+          if (existing) continue;
+
+          console.log(`   └─ 📑 Syncing Chapter: ${ch.title}`);
+          
+          // Clean title and extract date
+          let cleanTitle = ch.title;
+          let releaseDate = null;
+          const dateRegex = /(มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)\s+\d+,\s+\d+/i;
+          const dateMatch = ch.title.match(dateRegex);
+          if (dateMatch) {
+            cleanTitle = ch.title.replace(dateMatch[0], "").trim();
+            releaseDate = dateMatch[0];
+          }
+
+          try {
+            await new Promise(r => setTimeout(r, 500));
+            // Use domcontentloaded and custom timeout for chapters
+            await page.goto(ch.url, { waitUntil: "domcontentloaded", timeout: 20000 });
+            await page.waitForSelector('#readerarea, .reader-area, .v_content, .reading-content, .page-break, img', { timeout: 10000 }).catch(() => {});
+
+            const pageImages = await page.evaluate(() => {
+              const selectors = ['#readerarea img', '.reader-area img', '.v_content img', '.reading-content img', '.page-break img'];
+              let found = [];
+              for (const sel of selectors) {
+                const imgs = Array.from(document.querySelectorAll(sel)).map(img => img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy-src')).filter(Boolean);
+                if (imgs.length > 0) { found = imgs; break; }
+              }
+              if (found.length === 0) {
+                found = Array.from(document.querySelectorAll('img')).map(img => img.src || img.getAttribute('data-src')).filter(src => src && (src.includes('uploads') || src.includes('manga'))).filter(src => !src.includes('logo') && !src.includes('avatar'));
+              }
+              return found;
+            });
+
+            if (pageImages.length > 0) {
+              await supabaseAdmin.from("chapters").upsert({
+                id: chapterId,
+                manga_id: mangaData.id,
+                title: cleanTitle,
+                release_date: releaseDate,
+                pages: pageImages,
+                created_at: new Date().toISOString()
+              });
+              stats.chaptersSynced++;
+              console.log(`   ✅ Success: ${pageImages.length} pages.`);
+            } else {
+              console.warn(`   ⚠️ Warning: No pages found for chapter: ${ch.title}`);
+              stats.errors.push(`No pages found for chapter "${ch.title}" of manga "${mangaData.title}"`);
+            }
+          } catch (chErr) {
+            console.error(`   ❌ Failed to scrape chapter ${ch.title}:`, chErr.message);
+            stats.errors.push(`Chapter "${ch.title}" of manga "${mangaData.title}": ${chErr.message}`);
+          }
+        }
+      } catch (mangaErr) {
+        console.error(`💥 Failed to scrape manga ${mangaUrl}:`, mangaErr.message);
+        stats.errors.push(`Manga "${mangaUrl}": ${mangaErr.message}`);
       }
     }
   } catch (err) {
