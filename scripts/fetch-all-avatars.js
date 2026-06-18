@@ -22,23 +22,78 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 function cleanMangaTitleForSearch(title) {
-  if (title.includes(",")) {
-    const parts = title.split(",");
-    for (const part of parts) {
-      const cleanPart = part.trim();
-      if (/^[a-zA-Z0-9\s':\-,!]+$/.test(cleanPart)) {
-        return cleanPart;
-      }
+  // Remove Thai Unicode characters (range \u0e00-\u0e7f)
+  let clean = title.replace(/[\u0e00-\u0e7f]/g, "");
+  
+  // Replace double spaces and trim
+  clean = clean.replace(/\s+/g, " ").trim();
+  
+  // Remove standalone S class at end (e.g. from "ระดับ S")
+  clean = clean.replace(/\s+[sS]$/, "");
+  
+  // Clean dangling symbols at the end (like :, ?, !, -, ,)
+  clean = clean.replace(/[:!?,\-\s]+$/, "").trim();
+
+  // Normalize quotes
+  clean = clean.replace(/[’‘`´]/g, "'");
+  
+  return clean;
+}
+
+// Extract core keywords from title for validation
+function getCoreKeywords(title) {
+  const clean = title.toLowerCase().replace(/[^a-z0-9\s]/g, "");
+  const words = clean.split(/\s+/);
+  const stopWords = new Set([
+    "the", "a", "an", "of", "to", "in", "for", "with", "is", "are", "on", "at", 
+    "and", "or", "from", "into", "through", "by", "about", "character", "icon", 
+    "pfp", "profile", "manga", "manhua", "webtoon", "remake"
+  ]);
+  return words.filter(w => w.length > 1 && !stopWords.has(w));
+}
+
+// Check if search result title matches manga title core keywords
+function isMatch(resultTitle, mangaCleanTitle) {
+  const rTitleLower = resultTitle.toLowerCase();
+  const mTitleLower = mangaCleanTitle.toLowerCase();
+  
+  // 1. Exclude titles suggesting text, manga panels, or chapter covers
+  const textExclusions = ["panel", "chapter", "bubble", "quote", "text", "page", "logo", "wallpaper", "edit", "writing", "sub", "scan", "scanlation"];
+  for (const exc of textExclusions) {
+    if (rTitleLower.includes(exc)) {
+      return false;
     }
-    return parts[0].trim();
   }
 
-  const englishMatch = title.match(/^[a-zA-Z0-9\s':\-,!]{3,}/);
-  if (englishMatch) {
-    return englishMatch[0].trim();
+  // 2. Exact or partial phrase match
+  const cleanMangaPhrase = mTitleLower.replace(/[^a-z0-9\s]/g, "").trim();
+  const cleanResultPhrase = rTitleLower.replace(/[^a-z0-9\s]/g, "").trim();
+  if (cleanResultPhrase.includes(cleanMangaPhrase) || cleanMangaPhrase.includes(cleanResultPhrase)) {
+    return true;
   }
+  
+  // 3. Keyword match
+  const coreKeywords = getCoreKeywords(mangaCleanTitle);
+  if (coreKeywords.length === 0) return true; // fallback if no keywords
+  
+  let matchCount = 0;
+  for (const word of coreKeywords) {
+    if (rTitleLower.includes(word)) {
+      matchCount++;
+    }
+  }
+  
+  if (coreKeywords.length === 1) {
+    return matchCount >= 1;
+  } else {
+    const threshold = Math.max(2, Math.ceil(coreKeywords.length * 0.5));
+    return matchCount >= Math.min(coreKeywords.length, threshold);
+  }
+}
 
-  return title.split(/[\(\)\[\]]/)[0].trim();
+// Convert Pinterest thumbnails/smaller sizes to high quality
+function getHighQualityPinterestUrl(url) {
+  return url.replace(/i\.pinimg\.com\/(200x150|236x|474x|564x)\//, "i.pinimg.com/736x/");
 }
 
 async function getVqdToken(query) {
@@ -65,76 +120,65 @@ async function getVqdToken(query) {
   return match[1];
 }
 
-async function fetchPinterestAvatars(title) {
-  const query = `${title} main character icon site:pinterest.com`;
-  try {
-    const vqd = await getVqdToken(query);
-    const imagesUrl = `https://duckduckgo.com/i.js?q=${encodeURIComponent(query)}&vqd=${vqd}&o=json`;
+async function executeSearch(query) {
+  const vqd = await getVqdToken(query);
+  const imagesUrl = `https://duckduckgo.com/i.js?q=${encodeURIComponent(query)}&vqd=${vqd}&o=json`;
 
-    const imgResponse = await fetch(imagesUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json"
-      }
-    });
-
-    if (imgResponse.ok) {
-      const data = await imgResponse.json();
-      if (data.results && data.results.length > 0) {
-        // Collect up to 8 unique Pinterest image URLs
-        const urls = [];
-        for (const res of data.results) {
-          if (res.image && res.image.startsWith("http") && !urls.includes(res.image)) {
-            urls.push(res.image);
-            if (urls.length >= 8) break;
-          }
-        }
-        if (urls.length > 0) return urls;
-      }
+  const imgResponse = await fetch(imagesUrl, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "application/json"
     }
-  } catch (err) {
-    console.warn(`[AvatarFetch] Pinterest search failed for "${title}":`, err.message);
+  });
+
+  if (!imgResponse.ok) {
+    throw new Error(`Failed to fetch images list: ${imgResponse.statusText}`);
   }
 
-  // Fallback to general search without site:pinterest.com
-  const generalQuery = `${title} main character icon`;
-  try {
-    const vqd = await getVqdToken(generalQuery);
-    const imagesUrl = `https://duckduckgo.com/i.js?q=${encodeURIComponent(generalQuery)}&vqd=${vqd}&o=json`;
-
-    const imgResponse = await fetch(imagesUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json"
-      }
-    });
-
-    if (imgResponse.ok) {
-      const data = await imgResponse.json();
-      if (data.results && data.results.length > 0) {
-        const urls = [];
-        for (const res of data.results) {
-          if (res.image && res.image.startsWith("http") && !urls.includes(res.image)) {
-            urls.push(res.image);
-            if (urls.length >= 8) break;
-          }
-        }
-        if (urls.length > 0) return urls;
-      }
-    }
-  } catch (err) {
-    console.warn(`[AvatarFetch] General fallback failed for "${title}":`, err.message);
-  }
-
-  return null;
+  const data = await imgResponse.json();
+  return data.results || [];
 }
 
-// Delay helper to prevent DDG rate limits
+async function searchPinterestAvatars(title, cleanTitle, globalUsedUrls) {
+  const query = `${cleanTitle} character icon site:pinterest.com -text -logo -bubble -panel -manhua -manga -chapter`;
+  
+  // Retry mechanism for rate limits
+  let retries = 3;
+  let results = [];
+  
+  while (retries > 0) {
+    try {
+      results = await executeSearch(query);
+      break;
+    } catch (err) {
+      retries--;
+      console.warn(`    Search failed for "${query}". Retries left: ${retries}. Error: ${err.message}`);
+      if (retries > 0) {
+        await sleep(15000); // Sleep 15s on failure to cool down IP
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  const urls = [];
+  for (const res of results) {
+    if (res.image && res.image.includes("pinimg.com")) {
+      const hqUrl = getHighQualityPinterestUrl(res.image);
+      if (isMatch(res.title, cleanTitle) && !urls.includes(hqUrl) && !globalUsedUrls.has(hqUrl)) {
+        urls.push(hqUrl);
+        if (urls.length >= 8) break;
+      }
+    }
+  }
+  return urls;
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
   console.log("🚀 Starting Pinterest Avatar Pre-fetcher...");
-  const { data: mangas, error } = await supabase.from("manga").select("id, title, cover");
+  const { data: mangas, error } = await supabase.from("manga").select("id, title, original_title, cover");
   if (error) {
     console.error("Failed to query mangas:", error.message);
     process.exit(1);
@@ -142,7 +186,6 @@ async function main() {
 
   console.log(`Loaded ${mangas.length} mangas from database.`);
   
-  // Ensure data directory exists
   const dataDir = "C:\\Base\\20-29_Work_and_Projects\\21_Active_Projects\\Mangify\\src\\data";
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
@@ -160,32 +203,103 @@ async function main() {
     }
   }
 
+  // Identify global duplicates in the current cache to clean them up
+  const urlCounts = {};
+  for (const [mangaId, urls] of Object.entries(cache)) {
+    if (Array.isArray(urls)) {
+      for (const url of urls) {
+        urlCounts[url] = (urlCounts[url] || 0) + 1;
+      }
+    }
+  }
+
+  const duplicates = new Set();
+  for (const [url, count] of Object.entries(urlCounts)) {
+    if (count > 1) {
+      duplicates.add(url);
+    }
+  }
+  console.log(`Found ${duplicates.size} duplicate URLs in existing cache. They will be cleared.`);
+
+  // Build a Set of all clean, unique URLs currently used in cache
+  const globalUsedUrls = new Set();
+  for (const [mangaId, urls] of Object.entries(cache)) {
+    if (Array.isArray(urls)) {
+      const validUrls = urls.filter(url => url.includes("pinimg.com") && !duplicates.has(url));
+      cache[mangaId] = validUrls; // Clean it immediately in memory
+      for (const url of validUrls) {
+        globalUsedUrls.add(url);
+      }
+    }
+  }
+
   for (let i = 0; i < mangas.length; i++) {
     const m = mangas[i];
     const cleanedTitle = cleanMangaTitleForSearch(m.title);
 
-    // Skip if already cached and contains multiple results
-    if (cache[m.id] && cache[m.id].length > 1) {
-      console.log(`[${i + 1}/${mangas.length}] "${m.title}" already cached. Skipping.`);
+    // If it has at least 4 valid cached Pinterest URLs, we keep them and skip search!
+    const forceRefresh = process.argv.includes("--force");
+    const hasValidCache = cache[m.id] && cache[m.id].length >= 4 && !forceRefresh;
+
+    if (hasValidCache) {
+      console.log(`[${i + 1}/${mangas.length}] "${m.title}" has ${cache[m.id].length} valid cached avatars. Skipping.`);
       continue;
     }
 
     console.log(`[${i + 1}/${mangas.length}] Fetching avatars for: "${m.title}" (Cleaned: "${cleanedTitle}")...`);
-    const urls = await fetchPinterestAvatars(cleanedTitle);
+    
+    let urls = [];
+    try {
+      urls = await searchPinterestAvatars(m.title, cleanedTitle, globalUsedUrls);
+      
+      // Fallback: If we got fewer than 4 results, try alternative titles in original_title
+      if (urls.length < 4 && m.original_title) {
+        const altTitles = m.original_title.split(",")
+          .map(t => t.trim())
+          .filter(t => t && !/[\u0e00-\u0e7f]/.test(t) && !/[\u4e00-\u9fa5\uac00-\ud7af]/.test(t) && t.length > 3);
+          
+        for (const alt of altTitles) {
+          const cleanedAlt = cleanMangaTitleForSearch(alt);
+          if (cleanedAlt && cleanedAlt !== cleanedTitle) {
+            console.log(`  -> Trying alternative title search: "${cleanedAlt}"...`);
+            const altUrls = await searchPinterestAvatars(m.title, cleanedAlt, globalUsedUrls);
+            for (const au of altUrls) {
+              if (!urls.includes(au)) {
+                urls.push(au);
+              }
+            }
+            if (urls.length >= 6) break;
+            await sleep(3500); // delay between fallbacks
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`  -> Failed to search for "${m.title}":`, err.message);
+      // Keep existing cached entries if any, otherwise keep it as is
+      if (cache[m.id] && cache[m.id].length > 0) {
+        console.log(`  -> Keeping ${cache[m.id].length} existing cached urls.`);
+        continue;
+      }
+    }
 
     if (urls && urls.length > 0) {
       cache[m.id] = urls;
-      console.log(`  -> Found ${urls.length} avatar icons.`);
+      // Add new URLs to global set
+      for (const u of urls) {
+        globalUsedUrls.add(u);
+      }
+      console.log(`  -> Cached ${urls.length} clean avatar icons.`);
     } else {
+      // If no avatars found at all, fallback to cover
       cache[m.id] = [m.cover];
       console.log(`  -> Fallback to cover image.`);
     }
 
-    // Save cache incrementally in case of interruption
+    // Save cache incrementally
     fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2), "utf-8");
 
-    // Sleep for 1.5 seconds between requests to avoid rate limits
-    await sleep(1500);
+    // Sleep for 3.5 seconds between requests to be safe
+    await sleep(3500);
   }
 
   console.log("✅ Done! Cache saved to src/data/manga-avatars-cache.json");
