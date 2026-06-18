@@ -773,11 +773,9 @@ export default function Home() {
       <div className="fixed inset-0 bg-background text-foreground flex flex-col items-center justify-center z-[9999] animate-in fade-in duration-300">
         <div className="flex flex-col items-center gap-6">
           <div className="relative flex items-center justify-center">
-            <img 
-              src="/img/web_icon/Mangify.png" 
-              alt="Mangify Logo" 
-              className="w-16 h-16 object-contain animate-bounce relative z-10"
-            />
+            <span className="material-symbols-outlined text-accent text-6xl animate-bounce">
+              book_5
+            </span>
             <div className="absolute inset-0 w-16 h-16 bg-accent/25 rounded-full blur-xl animate-ping" />
           </div>
           
