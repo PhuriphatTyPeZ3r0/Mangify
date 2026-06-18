@@ -9,31 +9,30 @@ interface ProfilePortalProps {
   mangas?: Manga[];
 }
 
-interface AnimeAvatarProps {
+interface MangaAvatarsListProps {
+  mangaId: string;
   cover: string;
-  title: string;
-  onClick: (avatarUrl: string) => void;
   selectedAvatar: string;
+  onClickAvatar: (url: string) => void;
 }
 
-export const AnimeAvatar: React.FC<AnimeAvatarProps> = ({ cover, title, onClick, selectedAvatar }) => {
-  const [avatarUrl, setAvatarUrl] = React.useState<string>("");
-  const [loading, setLoading] = React.useState(true);
+export const MangaAvatarsList: React.FC<MangaAvatarsListProps> = ({ mangaId, cover, selectedAvatar, onClickAvatar }) => {
+  const [urls, setUrls] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  React.useEffect(() => {
+  useEffect(() => {
     let active = true;
-    
-    const fetchAvatar = async () => {
+    const fetchUrls = async () => {
       try {
-        const response = await fetch(`/api/manga-avatar?title=${encodeURIComponent(title)}`);
-        if (!response.ok) throw new Error("Failed to fetch avatar");
-        const data = await response.json();
+        const res = await fetch(`/api/manga-avatar?mangaId=${mangaId}`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
         if (active) {
-          setAvatarUrl(data.url || cover);
+          setUrls(data.urls && data.urls.length > 0 ? data.urls : [cover]);
         }
-      } catch (err) {
+      } catch {
         if (active) {
-          setAvatarUrl(cover);
+          setUrls([cover]);
         }
       } finally {
         if (active) {
@@ -41,50 +40,51 @@ export const AnimeAvatar: React.FC<AnimeAvatarProps> = ({ cover, title, onClick,
         }
       }
     };
-
-    fetchAvatar();
-
+    fetchUrls();
     return () => {
       active = false;
     };
-  }, [title, cover]);
+  }, [mangaId, cover]);
 
-  // Determine if this avatar is selected (matches either the Pinterest URL, cover URL, or filename)
-  const isActive = selectedAvatar && avatarUrl && (
-    selectedAvatar === avatarUrl || 
-    selectedAvatar === cover ||
-    selectedAvatar.includes(avatarUrl.split("/").pop() || "no-match")
-  );
+  if (loading) {
+    return (
+      <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="aspect-square rounded-xl skeleton animate-pulse" />
+        ))}
+      </div>
+    );
+  }
 
   return (
-    <button
-      type="button"
-      onClick={() => onClick(avatarUrl || cover)}
-      className={`aspect-square rounded-2xl overflow-hidden border-2 transition-all relative group cursor-pointer ${
-        isActive 
-          ? "border-accent ring-4 ring-accent/20 scale-[1.03]" 
-          : "border-border/60 hover:border-accent/50 hover:scale-[1.02]"
-      }`}
-      title={title}
-    >
-      {loading ? (
-        <div className="w-full h-full skeleton animate-pulse" />
-      ) : (
-        <img 
-          src={avatarUrl || cover} 
-          alt={title} 
-          className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-300" 
-        />
-      )}
-      {isActive && (
-        <div className="absolute inset-0 bg-accent/20 flex items-center justify-center text-white backdrop-blur-[1px]">
-          <span className="material-symbols-outlined text-[24px] fill drop-shadow-md">check_circle</span>
-        </div>
-      )}
-      <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 text-left">
-        <p className="text-[10px] text-white font-medium truncate prompt-regular">{title}</p>
-      </div>
-    </button>
+    <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+      {urls.map((url, index) => {
+        const isActive = selectedAvatar === url || (selectedAvatar && selectedAvatar.includes(url.split("?")[0]));
+        return (
+          <button
+            type="button"
+            key={index}
+            onClick={() => onClickAvatar(url)}
+            className={`aspect-square rounded-xl overflow-hidden border-2 transition-all relative group cursor-pointer ${
+              isActive 
+                ? "border-accent ring-2 ring-accent/20 scale-[1.03]" 
+                : "border-border/60 hover:border-accent/40 hover:scale-[1.02]"
+            }`}
+          >
+            <img 
+              src={url} 
+              alt={`Avatar ${index + 1}`} 
+              className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-300"
+            />
+            {isActive && (
+              <div className="absolute inset-0 bg-accent/20 flex items-center justify-center text-white backdrop-blur-[1px]">
+                <span className="material-symbols-outlined text-[16px] fill drop-shadow-md">check_circle</span>
+              </div>
+            )}
+          </button>
+        );
+      })}
+    </div>
   );
 };
 
@@ -454,33 +454,33 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto pr-1 space-y-6 scrollbar-thin">
-              {/* Manga Character Avatars Grid */}
-              <div>
-                <h4 className="prompt-semibold text-xs text-foreground/80 mb-3 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px] text-accent">menu_book</span>
-                  รูปโปรไฟล์:
-                </h4>
-                {mangas.length === 0 ? (
-                  <div className="text-center py-6 text-xs opacity-60">
-                    ไม่พบข้อมูลมังงะในระบบขณะนี้
+            <div className="flex-1 overflow-y-auto pr-1 space-y-4 scrollbar-thin">
+              {mangas.length === 0 ? (
+                <div className="text-center py-6 text-xs opacity-60">
+                  ไม่พบข้อมูลมังงะในระบบขณะนี้
+                </div>
+              ) : (
+                mangas.map((manga) => (
+                  <div key={manga.id} className="border border-border/50 bg-surface/30 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center gap-3 border-b border-border/30 pb-2">
+                      <img src={manga.cover} alt="" className="w-8 h-10 object-cover rounded-md shadow-sm" />
+                      <div className="text-left">
+                        <h4 className="prompt-bold text-xs text-foreground/90">{manga.title}</h4>
+                        <p className="text-[9px] opacity-60 prompt-regular">ตัวละครทั้งหมดในเรื่อง</p>
+                      </div>
+                    </div>
+                    
+                    <MangaAvatarsList
+                      mangaId={manga.id}
+                      cover={manga.cover}
+                      selectedAvatar={selectedAvatar}
+                      onClickAvatar={(url) => {
+                        setSelectedAvatar(url);
+                      }}
+                    />
                   </div>
-                ) : (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                    {mangas.map((manga) => (
-                      <AnimeAvatar
-                        key={manga.id}
-                        cover={manga.cover}
-                        title={manga.title}
-                        selectedAvatar={selectedAvatar}
-                        onClick={(avatarUrl) => {
-                          setSelectedAvatar(avatarUrl);
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
+                ))
+              )}
             </div>
 
             <div className="border-t border-border/50 pt-4 mt-6 flex justify-end">
