@@ -25,62 +25,6 @@ function cleanMangaTitleForSearch(title: string): string {
   return clean;
 }
 
-// Extract core keywords from title for validation
-function getCoreKeywords(title: string): string[] {
-  const clean = title.toLowerCase().replace(/[^a-z0-9\s]/g, "");
-  const words = clean.split(/\s+/);
-  const stopWords = new Set([
-    "the", "a", "an", "of", "to", "in", "for", "with", "is", "are", "on", "at", 
-    "and", "or", "from", "into", "through", "by", "about", "character", "icon", 
-    "pfp", "profile", "manga", "manhua", "webtoon", "remake"
-  ]);
-  return words.filter(w => w.length > 1 && !stopWords.has(w));
-}
-
-// Check if search result title matches manga title core keywords
-function isMatch(resultTitle: string, mangaCleanTitle: string): boolean {
-  const rTitleLower = resultTitle.toLowerCase();
-  const mTitleLower = mangaCleanTitle.toLowerCase();
-  
-  // 1. Exclude titles suggesting text, manga panels, or chapter covers
-  const textExclusions = ["panel", "chapter", "bubble", "quote", "text", "page", "logo", "wallpaper", "edit", "writing", "sub", "scan", "scanlation"];
-  for (const exc of textExclusions) {
-    if (rTitleLower.includes(exc)) {
-      return false;
-    }
-  }
-
-  // 2. Exact or partial phrase match
-  const cleanMangaPhrase = mTitleLower.replace(/[^a-z0-9\s]/g, "").trim();
-  const cleanResultPhrase = rTitleLower.replace(/[^a-z0-9\s]/g, "").trim();
-  if (cleanResultPhrase.includes(cleanMangaPhrase) || cleanMangaPhrase.includes(cleanResultPhrase)) {
-    return true;
-  }
-  
-  // 3. Keyword match
-  const coreKeywords = getCoreKeywords(mangaCleanTitle);
-  if (coreKeywords.length === 0) return true; // fallback if no keywords
-  
-  let matchCount = 0;
-  for (const word of coreKeywords) {
-    if (rTitleLower.includes(word)) {
-      matchCount++;
-    }
-  }
-  
-  if (coreKeywords.length === 1) {
-    return matchCount >= 1;
-  } else {
-    const threshold = Math.max(2, Math.ceil(coreKeywords.length * 0.5));
-    return matchCount >= Math.min(coreKeywords.length, threshold);
-  }
-}
-
-// Convert Pinterest thumbnails/smaller sizes to high quality
-function getHighQualityPinterestUrl(url: string): string {
-  return url.replace(/i\.pinimg\.com\/(200x150|236x|474x|564x)\//, "i.pinimg.com/736x/");
-}
-
 async function getVqdToken(query: string): Promise<string> {
   const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
   const response = await fetch(searchUrl, {
@@ -105,93 +49,131 @@ async function getVqdToken(query: string): Promise<string> {
   return match[1];
 }
 
-function getGlobalUsedUrls(): Set<string> {
-  const used = new Set<string>();
-  try {
-    const cachePath = path.join(process.cwd(), "src/data/manga-avatars-cache.json");
-    if (fs.existsSync(cachePath)) {
-      const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
-      for (const urls of Object.values(cache)) {
-        if (Array.isArray(urls)) {
-          for (const url of urls) {
-            used.add(url as string);
-          }
-        }
-      }
-    }
-  } catch (err) {
-    // ignore
-  }
-  return used;
-}
-
-async function searchPinterestAvatars(cleanTitle: string, globalUsedUrls: Set<string>): Promise<string[]> {
-  const query = `${cleanTitle} character icon site:pinterest.com -text -logo -bubble -panel -manhua -manga -chapter`;
+async function executeSearch(query: string): Promise<any[]> {
   const vqd = await getVqdToken(query);
-  const imagesUrl = `https://duckduckgo.com/i.js?q=${encodeURIComponent(query)}&vqd=${vqd}&o=json`;
+  const jsonUrl = `https://duckduckgo.com/d.js?q=${encodeURIComponent(query)}&vqd=${vqd}&o=json`;
 
-  const imgResponse = await fetch(imagesUrl, {
+  const response = await fetch(jsonUrl, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       "Accept": "application/json",
     },
   });
 
-  if (!imgResponse.ok) {
-    throw new Error(`Failed to fetch images list: ${imgResponse.statusText}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch web results: ${response.statusText}`);
   }
 
-  const data = await imgResponse.json();
-  const results = data.results || [];
-  
-  const urls: string[] = [];
-  for (const res of results) {
-    if (res.image && res.image.includes("pinimg.com")) {
-      const hqUrl = getHighQualityPinterestUrl(res.image);
-      if (isMatch(res.title, cleanTitle) && !urls.includes(hqUrl) && !globalUsedUrls.has(hqUrl)) {
-        urls.push(hqUrl);
-        if (urls.length >= 8) break;
-      }
-    }
-  }
-  return urls;
+  const data = await response.json();
+  return data.results || [];
 }
 
-async function fetchPinterestAvatars(title: string, originalTitle: string | null): Promise<string[] | null> {
-  const cleanTitle = cleanMangaTitleForSearch(title);
-  const globalUsedUrls = getGlobalUsedUrls();
+interface CharacterInfo {
+  name: string;
+  url: string;
+}
+
+// Scrape Fandom Character List
+async function getFandomCharacters(mangaTitle: string): Promise<CharacterInfo[]> {
+  const query = `"${mangaTitle}" fandom wiki characters`;
   
-  let urls: string[] = [];
   try {
-    urls = await searchPinterestAvatars(cleanTitle, globalUsedUrls);
+    const searchResults = await executeSearch(query);
     
-    // Fallback: Alternative English titles if we got fewer than 4 results
-    if (urls.length < 4 && originalTitle) {
-      const altTitles = originalTitle.split(",")
-        .map(t => t.trim())
-        .filter(t => t && !/[\u0e00-\u0e7f]/.test(t) && !/[\u4e00-\u9fa5\uac00-\ud7af]/.test(t) && t.length > 3);
-        
-      for (const alt of altTitles) {
-        const cleanedAlt = cleanMangaTitleForSearch(alt);
-        if (cleanedAlt && cleanedAlt !== cleanTitle) {
-          try {
-            const altUrls = await searchPinterestAvatars(cleanedAlt, globalUsedUrls);
-            for (const au of altUrls) {
-              if (!urls.includes(au)) {
-                urls.push(au);
-              }
-            }
-            if (urls.length >= 6) break;
-          } catch (e) {
-            // ignore failure for individual alt search
-          }
-        }
+    // Find the first result that is a Fandom wiki URL
+    const wikiResult = searchResults.find(res => res.u && res.u.includes("fandom.com/wiki/"));
+    if (!wikiResult) {
+      return [];
+    }
+
+    const wikiUrl = wikiResult.u;
+    const response = await fetch(wikiUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const html = await response.text();
+    const linkPattern = /href="\/wiki\/([^":?#]+)"[^>]*>([^<]+)<\/a>/gi;
+    let match;
+    const charactersMap = new Map<string, CharacterInfo>();
+    
+    // Common non-character sub-routes or general wiki pages on Fandom
+    const exclusions = new Set([
+      "main_page", "characters", "story", "episodes", "timeline", "wiki", "gallery",
+      "special", "file", "category", "lookism_wiki", "reality_quest_wiki", "questism_wiki",
+      "wind_breaker_wiki", "help", "staff", "discussion", "recent_changes", "read",
+      "manga", "manhwa", "chapters", "season", "volume", "arc", "creators", "author"
+    ]);
+
+    const wikiOrigin = new URL(wikiUrl).origin;
+
+    while ((match = linkPattern.exec(html)) !== null) {
+      const pathSegment = match[1].trim();
+      const rawName = match[2].trim();
+      const lowerSegment = pathSegment.toLowerCase();
+
+      // Filter out utility links
+      if (
+        rawName && 
+        !rawName.includes("<") && 
+        !exclusions.has(lowerSegment) && 
+        !lowerSegment.includes("category:") &&
+        !lowerSegment.includes("file:") &&
+        !lowerSegment.includes("special:") &&
+        !lowerSegment.includes("/") &&
+        rawName.length > 2 &&
+        rawName.length < 35
+      ) {
+        const normalizedName = rawName.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim();
+        const charWikiUrl = `${wikiOrigin}/wiki/${pathSegment}`;
+        charactersMap.set(normalizedName.toLowerCase(), { name: normalizedName, url: charWikiUrl });
       }
     }
-  } catch (err: any) {
-    console.warn(`[AvatarSearch] Dynamic search failed for ${title}:`, err.message);
-  }
 
+    return Array.from(charactersMap.values()).slice(0, 8);
+  } catch (err) {
+    return [];
+  }
+}
+
+// Scrape character OpenGraph image
+async function getCharacterImageFromFandom(charUrl: string): Promise<string | null> {
+  try {
+    const response = await fetch(charUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    });
+    if (!response.ok) return null;
+    const html = await response.text();
+    const match = html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i);
+    if (match) {
+      return match[1].trim();
+    }
+  } catch (e) {
+    // ignore
+  }
+  return null;
+}
+
+async function fetchFandomAvatars(title: string): Promise<string[] | null> {
+  const cleanTitle = cleanMangaTitleForSearch(title);
+  const characters = await getFandomCharacters(cleanTitle);
+  if (characters.length === 0) return null;
+
+  const urls: string[] = [];
+  for (const char of characters) {
+    const imgUrl = await getCharacterImageFromFandom(char.url);
+    if (imgUrl && !urls.includes(imgUrl)) {
+      urls.push(imgUrl);
+    }
+    if (urls.length >= 8) break;
+  }
   return urls.length > 0 ? urls : null;
 }
 
@@ -226,7 +208,7 @@ export async function GET(request: NextRequest) {
     console.warn("[AvatarSearch] Local cache read error:", err.message);
   }
 
-  // 3. Fallback: Query Supabase for new manga details and search dynamically
+  // 3. Fallback: Query Supabase for new manga details and search dynamically from Fandom Wiki
   try {
     const { data: manga, error: dbError } = await supabase
       .from("manga")
@@ -238,7 +220,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ urls: [] });
     }
 
-    const urls = await fetchPinterestAvatars(manga.title, manga.original_title);
+    const urls = await fetchFandomAvatars(manga.title);
     const resultUrls = urls && urls.length > 0 ? urls : [manga.cover];
 
     // Cache in serverless memory

@@ -32,11 +32,6 @@ function cleanMangaTitleForSearch(title) {
   return clean;
 }
 
-// Convert to HQ Pinterest URL
-function getHighQualityPinterestUrl(url) {
-  return url.replace(/i\.pinimg\.com\/(200x150|236x|474x|564x)\//, "i.pinimg.com/736x/");
-}
-
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // DuckDuckGo Search Helpers
@@ -66,20 +61,20 @@ async function getVqdToken(query) {
 
 async function executeSearch(query) {
   const vqd = await getVqdToken(query);
-  const imagesUrl = `https://duckduckgo.com/i.js?q=${encodeURIComponent(query)}&vqd=${vqd}&o=json`;
+  const jsonUrl = `https://duckduckgo.com/d.js?q=${encodeURIComponent(query)}&vqd=${vqd}&o=json`;
 
-  const imgResponse = await fetch(imagesUrl, {
+  const response = await fetch(jsonUrl, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       "Accept": "application/json"
     }
   });
 
-  if (!imgResponse.ok) {
-    throw new Error(`Failed to fetch images list: ${imgResponse.statusText}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch web results: ${response.statusText}`);
   }
 
-  const data = await imgResponse.json();
+  const data = await response.json();
   return data.results || [];
 }
 
@@ -92,13 +87,13 @@ async function getFandomCharacters(mangaTitle) {
     const searchResults = await executeSearch(query);
     
     // Find the first result that is a Fandom wiki URL
-    const wikiResult = searchResults.find(res => res.url && res.url.includes("fandom.com/wiki/"));
+    const wikiResult = searchResults.find(res => res.u && res.u.includes("fandom.com/wiki/"));
     if (!wikiResult) {
       console.log("  ⚠️ No Fandom Wiki page found for this manga.");
       return [];
     }
 
-    const wikiUrl = wikiResult.url;
+    const wikiUrl = wikiResult.u;
     console.log(`  🌐 Found Wiki page: ${wikiUrl}`);
     
     const response = await fetch(wikiUrl, {
@@ -115,7 +110,6 @@ async function getFandomCharacters(mangaTitle) {
     const html = await response.text();
     
     // Extract links like <a href="/wiki/CharacterName">Character Name</a>
-    // We clean and filter them
     const linkPattern = /href="\/wiki\/([^":?#]+)"[^>]*>([^<]+)<\/a>/gi;
     let match;
     const charactersMap = new Map();
@@ -128,12 +122,14 @@ async function getFandomCharacters(mangaTitle) {
       "manga", "manhwa", "chapters", "season", "volume", "arc", "creators", "author"
     ]);
 
+    const wikiOrigin = new URL(wikiUrl).origin;
+
     while ((match = linkPattern.exec(html)) !== null) {
       const pathSegment = match[1].trim();
       const rawName = match[2].trim();
       const lowerSegment = pathSegment.toLowerCase();
 
-      // Filter out utility links, tags, and formatting tags inside link text
+      // Filter out utility links
       if (
         rawName && 
         !rawName.includes("<") && 
@@ -145,16 +141,16 @@ async function getFandomCharacters(mangaTitle) {
         rawName.length > 2 &&
         rawName.length < 35
       ) {
-        // Normalize name: Dowan_Ha -> Dowan Ha
         const normalizedName = rawName.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim();
-        charactersMap.set(normalizedName.toLowerCase(), normalizedName);
+        const charWikiUrl = `${wikiOrigin}/wiki/${pathSegment}`;
+        charactersMap.set(normalizedName.toLowerCase(), { name: normalizedName, url: charWikiUrl });
       }
     }
 
     const uniqueCharacters = Array.from(charactersMap.values());
     console.log(`  ✨ Found ${uniqueCharacters.length} potential characters on Wiki.`);
     
-    // Return first 8 main characters (which typically appear first in Wiki structures)
+    // Return first 8 main characters
     return uniqueCharacters.slice(0, 8);
   } catch (err) {
     console.warn(`  ⚠️ Error scraping Fandom characters: ${err.message}`);
@@ -162,64 +158,41 @@ async function getFandomCharacters(mangaTitle) {
   }
 }
 
-// Search Pinterest for specific character
-async function searchPinterestAvatars(mangaTitle, cleanTitle, characterName, globalUsedUrls) {
-  const queryTerm = characterName ? `${cleanTitle} ${characterName}` : cleanTitle;
-  const query = `${queryTerm} character icon site:pinterest.com -text -logo -bubble -panel -manhua -manga -chapter`;
-  
-  let retries = 3;
-  let results = [];
-  
-  while (retries > 0) {
-    try {
-      results = await executeSearch(query);
-      break;
-    } catch (err) {
-      retries--;
-      console.warn(`    Search failed for "${query}". Retries left: ${retries}. Error: ${err.message}`);
-      if (retries > 0) await sleep(10000);
-      else throw err;
-    }
-  }
-
-  const urls = [];
-  const textExclusions = ["panel", "chapter", "bubble", "quote", "text", "page", "logo", "wallpaper", "edit", "writing", "sub", "scan", "scanlation"];
-  
-  for (const res of results) {
-    if (res.image && res.image.includes("pinimg.com")) {
-      const hqUrl = getHighQualityPinterestUrl(res.image);
-      const titleLower = res.title.toLowerCase();
-      
-      // Filter out non-avatars
-      const hasExclusion = textExclusions.some(exc => titleLower.includes(exc));
-      if (!hasExclusion && !urls.includes(hqUrl) && !globalUsedUrls.has(hqUrl)) {
-        urls.push(hqUrl);
-        if (urls.length >= 2) break; // We only need 1-2 high-quality pins per character to diversify
+// Scrape character OpenGraph image
+async function getCharacterImageFromFandom(charUrl) {
+  try {
+    const response = await fetch(charUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
       }
+    });
+    if (!response.ok) return null;
+    const html = await response.text();
+    const match = html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i);
+    if (match) {
+      return match[1].trim();
     }
+  } catch (e) {
+    console.error(`      ⚠️ Failed to fetch character page: ${e.message}`);
   }
-  return urls;
+  return null;
 }
 
 async function main() {
-  console.log("🚀 Starting Fandom-Aware Pinterest Avatar Scraper...");
+  console.log("🚀 Starting Fandom-Wiki-Only Avatar Scraper...");
   
   const { data: mangas, error } = await supabase.from("manga").select("id, title, original_title, cover");
   if (error) {
-    console.error("Failed to query mangas:", error.message);
+    console.error("Failed to query mangas from Supabase:", error.message);
     process.exit(1);
   }
 
-  console.log(`Loaded ${mangas.length} mangas from database.`);
+  console.log(`Loaded ${mangas.length} mangas from Supabase.`);
   
   const dataDir = path.join(__dirname, "../src/data");
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
   const cachePath = path.join(dataDir, "manga-avatars-cache.json");
+  
   let cache = {};
-
   if (fs.existsSync(cachePath)) {
     try {
       cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
@@ -229,13 +202,22 @@ async function main() {
     }
   }
 
-  // Set of all used URLs to enforce uniqueness across all mangas
-  const globalUsedUrls = new Set();
-  for (const [mangaId, urls] of Object.entries(cache)) {
-    if (Array.isArray(urls)) {
-      for (const url of urls) {
-        globalUsedUrls.add(url);
-      }
+  // Purge Pinterest URLs from all loaded cache entries
+  console.log("🧹 Purging all old Pinterest (pinimg.com) URLs from cache...");
+  for (const mangaId of Object.keys(cache)) {
+    const originalCount = cache[mangaId].length;
+    const filtered = cache[mangaId].filter(url => !url.includes("pinimg.com") && !url.includes("pinterest.com"));
+    
+    if (filtered.length === 0) {
+      // Find this manga's cover to use as fallback if available
+      const dbManga = mangas.find(m => m.id === mangaId);
+      cache[mangaId] = dbManga ? [dbManga.cover] : [];
+    } else {
+      cache[mangaId] = filtered;
+    }
+    
+    if (cache[mangaId].length !== originalCount) {
+      console.log(`  Cleaned Pinterest URLs from: ${mangaId} (${originalCount} -> ${cache[mangaId].length})`);
     }
   }
 
@@ -245,74 +227,56 @@ async function main() {
     const m = mangas[i];
     const cleanedTitle = cleanMangaTitleForSearch(m.title);
 
-    // If cache is already healthy and we're not forcing refresh, skip
-    if (cache[m.id] && cache[m.id].length >= 4 && !forceRefresh) {
-      console.log(`[${i + 1}/${mangas.length}] "${m.title}" has ${cache[m.id].length} cached avatars. Skipping.`);
+    // If cache already has clean Fandom image(s) (no Pinterest) and we're not forcing, skip
+    const hasCleanCache = cache[m.id] && cache[m.id].length > 0 && cache[m.id].every(url => !url.includes("pinimg.com")) && !forceRefresh;
+    if (hasCleanCache && cache[m.id][0] !== m.cover) {
+      console.log(`[${i + 1}/${mangas.length}] "${m.title}" already has clean cached Fandom avatars. Skipping.`);
       continue;
     }
 
-    console.log(`[${i + 1}/${mangas.length}] Scraping avatars for: "${m.title}"...`);
+    console.log(`[${i + 1}/${mangas.length}] Scraping Fandom avatars for: "${m.title}"...`);
     
     // 1. Try to get characters from Fandom Wiki
     const characters = await getFandomCharacters(cleanedTitle);
-    let allUrls = [];
+    const allUrls = [];
 
     if (characters.length > 0) {
-      console.log(`  👥 Specific characters to search: ${characters.join(", ")}`);
+      console.log(`  👥 Found characters: ${characters.map(c => c.name).join(", ")}`);
       
-      for (const charName of characters) {
+      for (const char of characters) {
         try {
-          console.log(`    🔍 Fetching avatar for: "${charName}"`);
-          const charUrls = await searchPinterestAvatars(m.title, cleanedTitle, charName, globalUsedUrls);
-          charUrls.forEach(u => {
-            if (!allUrls.includes(u)) {
-              allUrls.push(u);
-              globalUsedUrls.add(u);
-            }
-          });
-          // Avoid spamming DuckDuckGo search endpoint
-          await sleep(2500);
+          console.log(`    🔍 Fetching avatar for: "${char.name}"...`);
+          const imgUrl = await getCharacterImageFromFandom(char.url);
+          if (imgUrl && !allUrls.includes(imgUrl)) {
+            allUrls.push(imgUrl);
+            console.log(`      ✅ Found image: ${imgUrl.substring(0, 80)}...`);
+          }
+          await sleep(1500); // 1.5s delay to be friendly to Fandom Wiki
         } catch (e) {
-          console.warn(`    ⚠️ Failed searching for character ${charName}: ${e.message}`);
+          console.warn(`    ⚠️ Failed searching for character ${char.name}: ${e.message}`);
         }
         
-        // Target: 6-8 avatars per manga
+        // Target 8 avatars per manga
         if (allUrls.length >= 8) break;
       }
     }
 
-    // 2. Fallback tier 1: General search if Fandom failed or returned no results
-    if (allUrls.length < 4) {
-      console.log(`  ⚠️ Fallback Tier 1: Running general search for "${cleanedTitle}"...`);
-      try {
-        const generalUrls = await searchPinterestAvatars(m.title, cleanedTitle, null, globalUsedUrls);
-        generalUrls.forEach(u => {
-          if (!allUrls.includes(u)) {
-            allUrls.push(u);
-            globalUsedUrls.add(u);
-          }
-        });
-      } catch (e) {
-        console.warn(`    ⚠️ General search failed: ${e.message}`);
-      }
-    }
-
-    // 3. Fallback tier 2: Cover image as final option
+    // 2. Fallback: If no Fandom images found at all, use manga cover
     if (allUrls.length === 0) {
-      console.log("  ⚠️ Fallback Tier 2: Using manga cover.");
+      console.log("  ⚠️ Fallback: No Fandom characters found. Using manga cover.");
       allUrls.push(m.cover);
     }
 
     // Save manga avatars cache
     cache[m.id] = allUrls.slice(0, 8);
     fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2), "utf-8");
-    console.log(`  ✅ Finished: Cached ${cache[m.id].length} avatars.`);
+    console.log(`  🎉 Finished: Cached ${cache[m.id].length} official avatars.`);
     
     // Wait between mangas to avoid rate limits
-    await sleep(4000);
+    await sleep(3000);
   }
 
-  console.log("🏁 Scraper finished successfully. Cache updated.");
+  console.log("🏁 Fandom-Wiki-Only Scraper finished successfully. Cache updated.");
 }
 
 main().catch(console.error);
