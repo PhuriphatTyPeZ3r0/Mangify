@@ -55,7 +55,11 @@ export async function POST(request: NextRequest) {
     const emailResult = await send2FACodeEmail(email, code);
 
     if (!emailResult.success) {
-      return NextResponse.json({ error: `ไม่สามารถส่งรหัส 2FA ได้: ${emailResult.error}` }, { status: 500 });
+      if (process.env.NODE_ENV === "development") {
+        console.log(`\n🔑 [DEV MODE] 2FA Verification Code for ${email} is: ${code}\n`);
+      } else {
+        return NextResponse.json({ error: `ไม่สามารถส่งรหัส 2FA ได้: ${emailResult.error}` }, { status: 500 });
+      }
     }
 
     return NextResponse.json({
