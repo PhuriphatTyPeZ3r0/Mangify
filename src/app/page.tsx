@@ -49,6 +49,7 @@ export default function Home() {
   
   // --- Auth State ---
   const [session, setSession] = useState<any>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup" | "emailsent">("login");
   const [authEmail, setAuthEmail] = useState("");
@@ -61,6 +62,8 @@ export default function Home() {
   const [isGenreModalOpen, setIsGenreModalOpen] = useState(false);
   const [tempSelectedGenres, setTempSelectedGenres] = useState<string[]>([]);
   const [mounted, setMounted] = useState(false);
+  const [showLoading, setShowLoading] = useState(true);
+  const [isExiting, setIsExiting] = useState(false);
 
   // --- Reader State ---
   const [isReaderOpen, setIsReaderOpen] = useState(false);
@@ -133,6 +136,21 @@ export default function Home() {
     setSelectedMangaInfo(manga);
     if (manga) {
       logEvent("manga_view", { manga_id: manga.id });
+    }
+  };
+
+  const fetchUserProfile = async (uid: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("display_name, username, avatar_url")
+        .eq("id", uid)
+        .single();
+      if (data) {
+        setUserProfile(data);
+      }
+    } catch (err) {
+      console.error("Error fetching user profile:", err);
     }
   };
 
@@ -651,8 +669,10 @@ export default function Home() {
       if (session) {
         setUserId(session.user.id);
         checkAdminStatus(session.user.id);
+        fetchUserProfile(session.user.id);
         await fetchUserData(session.user.id, session.access_token);
       } else {
+        setUserProfile(null);
         await fetchUserData(anonId, null);
       }
     });
@@ -662,6 +682,7 @@ export default function Home() {
       if (session) {
         setUserId(session.user.id);
         checkAdminStatus(session.user.id);
+        fetchUserProfile(session.user.id);
         
         if (event === "SIGNED_IN") {
           await syncAnonymousDataToUser(session.user.id, session.access_token);
@@ -684,6 +705,7 @@ export default function Home() {
       } else {
         setIsAdmin(false);
         setUserId(anonId);
+        setUserProfile(null);
         await fetchUserData(anonId, null);
         
         if (event === "SIGNED_OUT") {
@@ -722,37 +744,44 @@ export default function Home() {
     }
   }, [isGenreModalOpen, favoriteGenres]);
 
+  // Handle smooth transition of loading page
+  useEffect(() => {
+    if (mounted && !mangaLoading) {
+      setIsExiting(true);
+      const timer = setTimeout(() => {
+        setShowLoading(false);
+      }, 450);
+      return () => clearTimeout(timer);
+    }
+  }, [mounted, mangaLoading]);
+
   const renderPortal = (content: React.ReactNode) => {
     if (!mounted || typeof window === "undefined") return null;
     return createPortal(content, document.body);
   };
 
   // --- Render ---
-  if (!mounted || mangaLoading) {
+  if (showLoading) {
     return (
-      <div className="fixed inset-0 bg-background text-foreground flex flex-col items-center justify-center z-[9999] animate-in fade-in duration-300">
-        <div className="flex flex-col items-center gap-6">
-          <div className="relative flex items-center justify-center">
-            <span className="material-symbols-outlined text-accent text-6xl animate-bounce">
-              book_5
-            </span>
-            <div className="absolute inset-0 w-16 h-16 bg-accent/25 rounded-full blur-xl animate-ping" />
-          </div>
+      <div 
+        className={`fixed inset-0 bg-background text-foreground flex flex-col items-center justify-center z-[9999] transition-all duration-500 ease-in-out ${
+          isExiting ? "opacity-0 pointer-events-none scale-[1.02] blur-sm" : "opacity-100"
+        }`}
+      >
+        <div className="flex flex-col items-center gap-4 animate-in fade-in zoom-in-95 duration-500">
+          <span className="material-symbols-outlined text-accent text-6xl md:text-8xl transition-all duration-300 select-none animate-pulse">
+            book_5
+          </span>
           
-          <div className="text-center space-y-2">
-            <h1 className="prompt-bold text-3xl tracking-tight bg-gradient-to-r from-foreground to-accent bg-clip-text text-transparent">
-              Mangify
-            </h1>
-            <p className="prompt-light text-xs opacity-75">
-              กำลังจัดเตรียมหิ้งหนังสือการ์ตูนสุดพิเศษสำหรับคุณ...
-            </p>
-          </div>
+          <h1 className="prompt-bold text-3xl md:text-4xl tracking-tight text-foreground transition-all duration-300 select-none">
+            Mangify
+          </h1>
 
-          <div className="w-48 h-1 bg-border/40 rounded-full overflow-hidden relative">
-            <div className="absolute top-0 left-0 h-full bg-accent rounded-full w-2/3" style={{
-              backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
-              animation: 'shimmer 1.5s infinite linear'
-            }} />
+          <div className="flex gap-2.5 items-center justify-center mt-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-accent dot-wave-1" />
+            <span className="w-2.5 h-2.5 rounded-full bg-accent dot-wave-2" />
+            <span className="w-2.5 h-2.5 rounded-full bg-accent dot-wave-3" />
+            <span className="w-2.5 h-2.5 rounded-full bg-accent dot-wave-4" />
           </div>
         </div>
       </div>
@@ -777,6 +806,7 @@ export default function Home() {
         }}
         activeTheme={activeTheme}
         onApplyTheme={applyTheme}
+        userProfile={userProfile}
       />
 
       {/* Main Content Area */}
@@ -794,7 +824,7 @@ export default function Home() {
             userId={userId}
             userEmail={session?.user?.email || ""}
             onLogout={handleLogout}
-            mangas={mangas}
+            onProfileUpdate={() => fetchUserProfile(userId)}
           />
         ) : (
           <>
@@ -822,10 +852,11 @@ export default function Home() {
                     headerExtra={
                       <button 
                         onClick={() => setIsGenreModalOpen(true)}
-                        className="text-xs prompt-semibold flex items-center gap-1 bg-accent/10 text-accent hover:bg-accent hover:text-white px-3 py-1.5 rounded-full transition-all cursor-pointer shadow-sm"
+                        className="prompt-semibold flex items-center justify-center gap-1 text-accent bg-accent/10 border border-accent/20 hover:bg-accent hover:text-white transition-all cursor-pointer shadow-sm text-xs md:text-sm p-1.5 md:px-3 md:py-1.5 rounded-lg md:rounded-full"
+                        title="แก้ไขหมวดหมู่"
                       >
-                        <span className="material-symbols-outlined text-[14px]">edit</span>
-                        ปรับแต่งหมวดหมู่
+                        <span className="material-symbols-outlined text-[16px] md:text-[18px]">edit</span>
+                        <span className="hidden md:inline">แก้ไขหมวดหมู่</span>
                       </button>
                     }
                   />
@@ -834,8 +865,8 @@ export default function Home() {
                 {/* 2. New Updates Section */}
                 <section>
                   <h2 className="prompt-semibold text-xl mb-6 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[20px] text-accent">update</span>
-                    มังงะอัปเดตใหม่
+                    <span className="material-symbols-outlined text-[20px] text-accent">history</span>
+                    อัปเดตล่าสุด
                   </h2>
                   <LibraryGrid 
                     activeTab="updates"

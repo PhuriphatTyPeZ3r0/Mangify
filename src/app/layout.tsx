@@ -28,9 +28,23 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var savedTheme = localStorage.getItem("mangify-theme") || "light";
+                  document.documentElement.classList.add("theme-" + savedTheme);
+                  document.documentElement.setAttribute("data-theme", savedTheme);
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
         <link rel="icon" type="image/png" href="/img/web_icon/Mangify.png" />
         <link
           rel="stylesheet"

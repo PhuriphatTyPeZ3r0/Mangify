@@ -33,24 +33,24 @@ export const QuickResumeBanner: React.FC<QuickResumeBannerProps> = ({
             <img src={lastManga.cover} alt="Cover" className="w-full h-full object-cover" />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="flex h-2 w-2 rounded-full bg-accent animate-pulse" />
-              <span className="text-[10px] prompt-bold uppercase tracking-widest text-accent">อ่านค้างไว้ล่าสุด</span>
+            <div className="flex items-center gap-1.5 mb-1 text-accent font-semibold text-xs prompt-medium">
+              <span className="flex h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+              <span>อ่านล่าสุด</span>
             </div>
             <h3 className="prompt-bold text-lg sm:text-xl truncate group-hover:text-accent transition-colors">
               {lastManga.title}
             </h3>
-            <p className="prompt-light text-xs opacity-60 truncate">
-              {lastChapter?.title || "ตอนล่าสุด"} • หน้าที่ {history.pageIndex + 1} ({Math.round(history.scrollPercent)}%)
+            <p className="prompt-light text-xs opacity-60 mt-1 truncate">
+              {lastChapter?.title || "ตอนล่าสุด"} | หน้าที่ {history.pageIndex + 1} ({Math.round(history.scrollPercent)}%)
             </p>
           </div>
         </div>
 
-        <div className="hidden sm:flex flex-col items-end gap-2 z-10">
-          <div className="w-10 h-10 rounded-full bg-accent text-white flex items-center justify-center shadow-md transition-transform group-hover:scale-110">
-            <span className="material-symbols-outlined text-[24px]">play_arrow</span>
+        {/* Action Button: Hidden on mobile, visible on tablet/desktop (md:) */}
+        <div className="hidden md:flex items-center justify-center z-10 pr-2">
+          <div className="w-12 h-12 rounded-full bg-accent text-white flex items-center justify-center shadow-md transition-all group-hover:scale-110 duration-300">
+            <span className="material-symbols-outlined text-[24px]">menu_book</span>
           </div>
-          <span className="text-[10px] prompt-medium opacity-40 uppercase tracking-tighter">คลิกเพื่ออ่านต่อ</span>
         </div>
       </div>
     </div>

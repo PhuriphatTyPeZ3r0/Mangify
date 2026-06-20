@@ -83,6 +83,35 @@ body {
   animation: shimmer 1.5s infinite linear;
 }
 
+/* 4-Dot Loading Animation */
+@keyframes dotWave {
+  0%, 100% {
+    opacity: 0.25;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.dot-wave-1 {
+  animation: dotWave 1.2s infinite ease-in-out;
+  animation-delay: 0s;
+}
+.dot-wave-2 {
+  animation: dotWave 1.2s infinite ease-in-out;
+  animation-delay: 0.15s;
+}
+.dot-wave-3 {
+  animation: dotWave 1.2s infinite ease-in-out;
+  animation-delay: 0.3s;
+}
+.dot-wave-4 {
+  animation: dotWave 1.2s infinite ease-in-out;
+  animation-delay: 0.45s;
+}
+
 /* Custom Scrollbar for clean UI */
 ::-webkit-scrollbar {
   width: 6px;

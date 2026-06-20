@@ -1,104 +1,23 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { Manga } from "../types";
 
 interface ProfilePortalProps {
   userId: string;
   userEmail: string;
   onLogout: () => void;
-  mangas?: Manga[];
+  onProfileUpdate?: () => void;
 }
-
-interface MangaAvatarsListProps {
-  mangaId: string;
-  cover: string;
-  selectedAvatar: string;
-  onClickAvatar: (url: string) => void;
-}
-
-export const MangaAvatarsList: React.FC<MangaAvatarsListProps> = ({ mangaId, cover, selectedAvatar, onClickAvatar }) => {
-  const [urls, setUrls] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    const fetchUrls = async () => {
-      try {
-        const res = await fetch(`/api/manga-avatar?mangaId=${mangaId}`);
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        if (active) {
-          setUrls(data.urls && data.urls.length > 0 ? data.urls : [cover]);
-        }
-      } catch {
-        if (active) {
-          setUrls([cover]);
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    };
-    fetchUrls();
-    return () => {
-      active = false;
-    };
-  }, [mangaId, cover]);
-
-  if (loading) {
-    return (
-      <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="aspect-square rounded-xl skeleton animate-pulse" />
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-      {urls.map((url, index) => {
-        const isActive = selectedAvatar === url || (selectedAvatar && selectedAvatar.includes(url.split("?")[0]));
-        return (
-          <button
-            type="button"
-            key={index}
-            onClick={() => onClickAvatar(url)}
-            className={`aspect-square rounded-xl overflow-hidden border-2 transition-all relative group cursor-pointer ${
-              isActive 
-                ? "border-accent ring-2 ring-accent/20 scale-[1.03]" 
-                : "border-border/60 hover:border-accent/40 hover:scale-[1.02]"
-            }`}
-          >
-            <img 
-              src={url} 
-              alt={`Avatar ${index + 1}`} 
-              className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-300"
-            />
-            {isActive && (
-              <div className="absolute inset-0 bg-accent/20 flex items-center justify-center text-white backdrop-blur-[1px]">
-                <span className="material-symbols-outlined text-[16px] fill drop-shadow-md">check_circle</span>
-              </div>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-};
 
 export const ProfilePortal: React.FC<ProfilePortalProps> = ({
   userId,
   userEmail,
   onLogout,
-  mangas = []
+  onProfileUpdate
 }) => {
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
   const [selectedAvatar, setSelectedAvatar] = useState("");
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
-  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
   
   // Loading & UI States
   const [loading, setLoading] = useState(true);
@@ -111,6 +30,9 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
   const [verificationCode, setVerificationCode] = useState("");
   const [verifyingCode, setVerifyingCode] = useState(false);
   const [verificationError, setVerificationError] = useState<string | null>(null);
+
+  // File Input Ref for Uploading
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load profile from Supabase
   const loadProfile = async () => {
@@ -164,10 +86,61 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
 
       if (error) throw error;
       setMessage({ text: "บันทึกข้อมูลโปรไฟล์ของคุณเรียบร้อยแล้ว!", type: "success" });
+      if (onProfileUpdate) onProfileUpdate();
     } catch (err: any) {
       setMessage({ text: `เกิดข้อผิดพลาด: ${err.message}`, type: "error" });
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Handle File Upload and Resizing to 200x200 WebP/JPEG Base64
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("กรุณาเลือกไฟล์รูปภาพเท่านั้น");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        // Force a 200x200 square image
+        canvas.width = 200;
+        canvas.height = 200;
+
+        // Crop center of the image to keep correct aspect ratio
+        const size = Math.min(img.width, img.height);
+        const sx = (img.width - size) / 2;
+        const sy = (img.height - size) / 2;
+
+        ctx.drawImage(img, sx, sy, size, size, 0, 0, 200, 200);
+
+        // Convert to WebP base64 format (fallback to JPEG if not supported by canvas)
+        let dataUrl = canvas.toDataURL("image/webp", 0.85);
+        if (!dataUrl.startsWith("data:image/webp")) {
+          dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        }
+
+        setSelectedAvatar(dataUrl);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Remove selected avatar image
+  const handleRemoveAvatar = () => {
+    setSelectedAvatar("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
     }
   };
 
@@ -242,29 +215,55 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
 
   return (
     <div className="animate-in fade-in duration-500 max-w-4xl mx-auto pb-12">
+      {/* Hidden File Input for uploading avatar */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept="image/*"
+        className="hidden"
+      />
+
       <div className="flex flex-col lg:flex-row gap-8 items-start">
         
-        {/* Left Card: Account Card with presets */}
+        {/* Left Card: Account Card with upload button */}
         <div className="w-full lg:w-1/3 bg-surface border border-border/80 rounded-3xl p-6 flex flex-col items-center text-center shadow-sm">
           {/* Avatar frame */}
           <div 
-            onClick={() => setIsAvatarModalOpen(true)}
-            className="w-24 h-24 rounded-full overflow-hidden border-2 border-accent/20 shadow-md mb-4 relative bg-background flex items-center justify-center group cursor-pointer hover:border-accent hover:scale-105 transition-all duration-300"
-            title="คลิกเพื่อเปลี่ยนรูปภาพโปรไฟล์"
+            onClick={() => fileInputRef.current?.click()}
+            className="w-24 h-24 rounded-full overflow-hidden border-2 border-accent/20 shadow-md mb-3 relative bg-background flex items-center justify-center group cursor-pointer hover:border-accent hover:scale-105 transition-all duration-300"
+            title="คลิกเพื่ออัปโหลดรูปภาพโปรไฟล์ใหม่"
           >
             {selectedAvatar ? (
-              <img src={selectedAvatar} alt="Profile Avatar" className="w-full h-full object-cover group-hover:opacity-75 transition-opacity duration-300" />
+              <img 
+                src={selectedAvatar} 
+                alt="Profile Avatar" 
+                referrerPolicy="no-referrer" 
+                className="w-full h-full object-cover group-hover:opacity-75 transition-opacity duration-300" 
+              />
             ) : (
               <div className="w-full h-full bg-accent/10 flex items-center justify-center text-accent prompt-bold text-2xl group-hover:opacity-75 transition-opacity duration-300">
                 {displayName ? displayName.charAt(0).toUpperCase() : (username ? username.charAt(0).toUpperCase() : "?")}
               </div>
             )}
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity duration-300">
-              <span className="material-symbols-outlined text-[20px]">edit</span>
+              <span className="material-symbols-outlined text-[20px]">upload</span>
             </div>
           </div>
+
+          {/* Remove Avatar Button */}
+          {selectedAvatar && (
+            <button
+              type="button"
+              onClick={handleRemoveAvatar}
+              className="text-[10px] prompt-medium text-destructive hover:underline mb-4 flex items-center gap-1 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[12px]">delete</span>
+              ลบรูปภาพโปรไฟล์
+            </button>
+          )}
           
-          <h3 className="prompt-bold text-lg text-foreground truncate max-w-[200px]">
+          <h3 className="prompt-bold text-lg text-foreground truncate max-w-[200px] mt-1">
             {displayName || "ไม่มีชื่อแสดงผล"}
           </h3>
           <p className="prompt-light text-xs opacity-60 mt-0.5">{userEmail}</p>
@@ -429,69 +428,6 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
                 )}
               </button>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Avatar Catalog Selection Popup Modal */}
-      {isAvatarModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[2000] flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div 
-            className="w-full max-w-2xl bg-surface border border-border/80 rounded-3xl p-6 sm:p-8 shadow-xl max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-300"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-center border-b border-border/50 pb-4 mb-6">
-              <h3 className="prompt-bold text-lg text-foreground flex items-center gap-2">
-                <span className="material-symbols-outlined text-accent text-[24px]">face</span>
-                เลือกรูปภาพโปรไฟล์ตัวละครหลัก
-              </h3>
-              <button 
-                type="button"
-                onClick={() => setIsAvatarModalOpen(false)}
-                className="p-1.5 rounded-full hover:bg-surface border border-transparent hover:border-border cursor-pointer transition-all"
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto pr-1 space-y-4 scrollbar-thin">
-              {mangas.length === 0 ? (
-                <div className="text-center py-6 text-xs opacity-60">
-                  ไม่พบข้อมูลมังงะในระบบขณะนี้
-                </div>
-              ) : (
-                mangas.map((manga) => (
-                  <div key={manga.id} className="border border-border/50 bg-surface/30 rounded-2xl p-4 space-y-3">
-                    <div className="flex items-center gap-3 border-b border-border/30 pb-2">
-                      <img src={manga.cover} alt="" className="w-8 h-10 object-cover rounded-md shadow-sm" />
-                      <div className="text-left">
-                        <h4 className="prompt-bold text-xs text-foreground/90">{manga.title}</h4>
-                        <p className="text-[9px] opacity-60 prompt-regular">ตัวละครทั้งหมดในเรื่อง</p>
-                      </div>
-                    </div>
-                    
-                    <MangaAvatarsList
-                      mangaId={manga.id}
-                      cover={manga.cover}
-                      selectedAvatar={selectedAvatar}
-                      onClickAvatar={(url) => {
-                        setSelectedAvatar(url);
-                      }}
-                    />
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="border-t border-border/50 pt-4 mt-6 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setIsAvatarModalOpen(false)}
-                className="px-5 py-2.5 bg-accent hover:opacity-90 text-white border border-transparent text-xs prompt-semibold rounded-full cursor-pointer transition-colors shadow-sm"
-              >
-                ยืนยันและเสร็จสิ้น
-              </button>
-            </div>
           </div>
         </div>
       )}

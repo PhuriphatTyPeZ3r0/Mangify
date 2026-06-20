@@ -41,10 +41,49 @@ try {
   process.exit(1);
 }
 
+function parseConnectionString(str) {
+  try {
+    // Robust regex to extract credentials, handling special characters in password
+    const regex = /^postgresql:\/\/([^:]+):([^@]+)@([^:/]+)(?::(\d+))?\/([^?#\s]+)/;
+    const match = str.match(regex);
+    if (!match) return null;
+    return {
+      user: match[1],
+      password: decodeURIComponent(match[2]),
+      host: match[3],
+      port: match[4] ? parseInt(match[4], 10) : 5432,
+      database: match[5]
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
 async function runMigration() {
   console.log(`🚀 Starting migration runner for schema: [${targetSchema}]`);
   
-  const client = new Client({ connectionString });
+  const connectionParams = parseConnectionString(connectionString);
+  let clientConfig = {};
+  
+  if (connectionParams) {
+    console.log(`  Parsed host: ${connectionParams.host}:${connectionParams.port}, user: ${connectionParams.user}`);
+    clientConfig = {
+      user: connectionParams.user,
+      password: connectionParams.password,
+      host: connectionParams.host,
+      port: connectionParams.port,
+      database: connectionParams.database,
+      ssl: { rejectUnauthorized: false }
+    };
+  } else {
+    console.log("  Could not parse connection string as URI, passing raw string.");
+    clientConfig = {
+      connectionString,
+      ssl: { rejectUnauthorized: false }
+    };
+  }
+
+  const client = new Client(clientConfig);
   await client.connect();
 
   try {

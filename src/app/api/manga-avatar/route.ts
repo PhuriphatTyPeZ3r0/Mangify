@@ -3,8 +3,7 @@ import fs from "fs";
 import path from "path";
 import { supabase } from "../../../lib/supabaseClient";
 
-// Serverless runtime memory cache for dynamically fetched new mangas
-const runtimeCache = new Map<string, string[]>();
+
 
 function cleanMangaTitleForSearch(title: string): string {
   // Remove Thai Unicode characters (range \u0e00-\u0e7f)
@@ -25,38 +24,12 @@ function cleanMangaTitleForSearch(title: string): string {
   return clean;
 }
 
-async function getVqdToken(query: string): Promise<string> {
-  const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
-  const response = await fetch(searchUrl, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to load DuckDuckGo page: ${response.statusText}`);
-  }
-
-  const html = await response.text();
-  const match = html.match(/vqd=["']([^"']+)["']/i);
-  if (!match) {
-    const match2 = html.match(/vqd=([^&"'\s)]+)/i);
-    if (!match2) {
-      throw new Error("VQD token not found in response HTML");
-    }
-    return match2[1];
-  }
-  return match[1];
-}
-
+// DuckDuckGo Search Helpers via HTML Parser (Bypasses bot detection)
 async function executeSearch(query: string): Promise<any[]> {
-  const vqd = await getVqdToken(query);
-  const jsonUrl = `https://duckduckgo.com/d.js?q=${encodeURIComponent(query)}&vqd=${vqd}&o=json`;
-
-  const response = await fetch(jsonUrl, {
+  const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+  const response = await fetch(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept": "application/json",
     },
   });
 
@@ -64,117 +37,158 @@ async function executeSearch(query: string): Promise<any[]> {
     throw new Error(`Failed to fetch web results: ${response.statusText}`);
   }
 
-  const data = await response.json();
-  return data.results || [];
-}
-
-interface CharacterInfo {
-  name: string;
-  url: string;
-}
-
-// Scrape Fandom Character List
-async function getFandomCharacters(mangaTitle: string): Promise<CharacterInfo[]> {
-  const query = `"${mangaTitle}" fandom wiki characters`;
-  
-  try {
-    const searchResults = await executeSearch(query);
-    
-    // Find the first result that is a Fandom wiki URL
-    const wikiResult = searchResults.find(res => res.u && res.u.includes("fandom.com/wiki/"));
-    if (!wikiResult) {
-      return [];
-    }
-
-    const wikiUrl = wikiResult.u;
-    const response = await fetch(wikiUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      }
-    });
-
-    if (!response.ok) {
-      return [];
-    }
-
-    const html = await response.text();
-    const linkPattern = /href="\/wiki\/([^":?#]+)"[^>]*>([^<]+)<\/a>/gi;
-    let match;
-    const charactersMap = new Map<string, CharacterInfo>();
-    
-    // Common non-character sub-routes or general wiki pages on Fandom
-    const exclusions = new Set([
-      "main_page", "characters", "story", "episodes", "timeline", "wiki", "gallery",
-      "special", "file", "category", "lookism_wiki", "reality_quest_wiki", "questism_wiki",
-      "wind_breaker_wiki", "help", "staff", "discussion", "recent_changes", "read",
-      "manga", "manhwa", "chapters", "season", "volume", "arc", "creators", "author"
-    ]);
-
-    const wikiOrigin = new URL(wikiUrl).origin;
-
-    while ((match = linkPattern.exec(html)) !== null) {
-      const pathSegment = match[1].trim();
-      const rawName = match[2].trim();
-      const lowerSegment = pathSegment.toLowerCase();
-
-      // Filter out utility links
-      if (
-        rawName && 
-        !rawName.includes("<") && 
-        !exclusions.has(lowerSegment) && 
-        !lowerSegment.includes("category:") &&
-        !lowerSegment.includes("file:") &&
-        !lowerSegment.includes("special:") &&
-        !lowerSegment.includes("/") &&
-        rawName.length > 2 &&
-        rawName.length < 35
-      ) {
-        const normalizedName = rawName.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim();
-        const charWikiUrl = `${wikiOrigin}/wiki/${pathSegment}`;
-        charactersMap.set(normalizedName.toLowerCase(), { name: normalizedName, url: charWikiUrl });
+  const html = await response.text();
+  const results: any[] = [];
+  const regex = /href="([^"]+)"/g;
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    const rawUrl = match[1];
+    if (rawUrl.includes("uddg=")) {
+      const uddgMatch = rawUrl.match(/uddg=([^&]+)/);
+      if (uddgMatch) {
+        const decoded = decodeURIComponent(uddgMatch[1]);
+        results.push({ u: decoded });
       }
     }
-
-    return Array.from(charactersMap.values()).slice(0, 8);
-  } catch (err) {
-    return [];
   }
+  return results;
 }
 
-// Scrape character OpenGraph image
-async function getCharacterImageFromFandom(charUrl: string): Promise<string | null> {
+
+function extractSubdomainAndTitle(urlOrSlug: string): { subdomain: string; pageTitle: string } | null {
+  if (!urlOrSlug) return null;
+  if (urlOrSlug.startsWith("http")) {
+    try {
+      const parsed = new URL(urlOrSlug);
+      const host = parsed.hostname;
+      const subdomain = host.split(".")[0];
+      const pageTitle = parsed.pathname.replace(/^\/wiki\//, "");
+      return { subdomain, pageTitle: decodeURIComponent(pageTitle) };
+    } catch (e) {
+      return null;
+    }
+  }
+  return { subdomain: urlOrSlug, pageTitle: "Characters" };
+}
+
+// Fetch characters and images using Fandom MediaWiki Action API (Bypasses Cloudflare block)
+async function fetchFandomAvatars(subdomain: string, initialPageTitle: string = "Characters"): Promise<string[] | null> {
+  const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  
+  const exclusions = new Set([
+    "main page", "characters", "story", "episodes", "timeline", "wiki", "gallery",
+    "special", "file", "category", "help", "staff", "discussion", "recent changes", "read",
+    "manga", "manhwa", "chapters", "season", "volume", "arc", "creators", "author", "local sitemap"
+  ]);
+
+  let characterTitles: string[] = [];
+
+  // Approach 1: Parse Characters Page
   try {
-    const response = await fetch(charUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    const pageToParse = initialPageTitle || "Characters";
+    const url = `https://${subdomain}.fandom.com/api.php?action=parse&page=${encodeURIComponent(pageToParse)}&prop=text&format=json`;
+    const res = await fetch(url, { headers: { "User-Agent": userAgent } });
+    if (res.ok) {
+      const data = await res.json();
+      const html = data.parse?.text?.["*"] || "";
+      
+      const linkPattern = /href="\/wiki\/([^":?#]+)"/gi;
+      let match;
+      const seen = new Set<string>();
+      while ((match = linkPattern.exec(html)) !== null) {
+        const decoded = decodeURIComponent(match[1].replace(/_/g, " ")).trim();
+        const lower = decoded.toLowerCase();
+        if (decoded && !seen.has(lower) && !exclusions.has(lower) && !lower.includes("category:") && !lower.includes("file:") && !lower.includes("special:") && !lower.includes("/") && decoded.length > 2 && decoded.length < 35) {
+          seen.add(lower);
+          characterTitles.push(decoded);
+        }
       }
-    });
-    if (!response.ok) return null;
-    const html = await response.text();
-    const match = html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i);
-    if (match) {
-      return match[1].trim();
     }
   } catch (e) {
     // ignore
   }
-  return null;
-}
 
-async function fetchFandomAvatars(title: string): Promise<string[] | null> {
-  const cleanTitle = cleanMangaTitleForSearch(title);
-  const characters = await getFandomCharacters(cleanTitle);
-  if (characters.length === 0) return null;
-
-  const urls: string[] = [];
-  for (const char of characters) {
-    const imgUrl = await getCharacterImageFromFandom(char.url);
-    if (imgUrl && !urls.includes(imgUrl)) {
-      urls.push(imgUrl);
+  // Approach 2: Query Category:Characters
+  if (characterTitles.length < 4) {
+    try {
+      const url = `https://${subdomain}.fandom.com/api.php?action=query&list=categorymembers&cmtitle=Category:Characters&cmlimit=25&format=json`;
+      const res = await fetch(url, { headers: { "User-Agent": userAgent } });
+      if (res.ok) {
+        const data = await res.json();
+        const members = data.query?.categorymembers || [];
+        for (const member of members) {
+          if (member.ns === 0 && member.title) {
+            const cleanTitle = member.title.trim().replace(/^['"]|['"]$/g, "");
+            const lower = cleanTitle.toLowerCase();
+            if (!exclusions.has(lower) && !characterTitles.includes(cleanTitle)) {
+              characterTitles.push(cleanTitle);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // ignore
     }
-    if (urls.length >= 8) break;
   }
-  return urls.length > 0 ? urls : null;
+
+  // Approach 3: Search "character"
+  if (characterTitles.length < 4) {
+    try {
+      const url = `https://${subdomain}.fandom.com/api.php?action=query&list=search&srsearch=character&srlimit=20&format=json`;
+      const res = await fetch(url, { headers: { "User-Agent": userAgent } });
+      if (res.ok) {
+        const data = await res.json();
+        const results = data.query?.search || [];
+        for (const result of results) {
+          if (result.title) {
+            const cleanTitle = result.title.trim();
+            const lower = cleanTitle.toLowerCase();
+            if (!exclusions.has(lower) && !characterTitles.includes(cleanTitle)) {
+              characterTitles.push(cleanTitle);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  if (characterTitles.length === 0) {
+    if (initialPageTitle && !exclusions.has(initialPageTitle.toLowerCase())) {
+      characterTitles.push(initialPageTitle.replace(/_/g, " "));
+    } else {
+      return null;
+    }
+  }
+
+  const uniqueTitles = Array.from(new Set(characterTitles)).slice(0, 12);
+  if (uniqueTitles.length === 0) return null;
+
+  // Query pageimages
+  try {
+    const url = `https://${subdomain}.fandom.com/api.php?action=query&titles=${encodeURIComponent(uniqueTitles.join("|"))}&prop=pageimages&pithumbsize=500&format=json`;
+    const res = await fetch(url, { headers: { "User-Agent": userAgent } });
+    if (res.ok) {
+      const data = await res.json();
+      const pages = data.query?.pages || {};
+      const imageUrls: string[] = [];
+      
+      for (const pageId of Object.keys(pages)) {
+        const page = pages[pageId];
+        const imgUrl = page.thumbnail?.source;
+        if (imgUrl && !imageUrls.includes(imgUrl)) {
+          imageUrls.push(imgUrl);
+        }
+      }
+
+      return imageUrls.length > 0 ? imageUrls.slice(0, 8) : null;
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return null;
 }
 
 export async function GET(request: NextRequest) {
@@ -185,12 +199,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing mangaId parameter" }, { status: 400 });
   }
 
-  // 1. Check serverless memory cache first
-  if (runtimeCache.has(mangaId)) {
-    return NextResponse.json({ urls: runtimeCache.get(mangaId) }, {
-      headers: { "Cache-Control": "public, max-age=86400, s-maxage=86400" }
-    });
-  }
+
 
   // 2. Check local JSON cache file
   try {
@@ -200,7 +209,7 @@ export async function GET(request: NextRequest) {
       const urls = cache[mangaId];
       if (urls && Array.isArray(urls)) {
         return NextResponse.json({ urls }, {
-          headers: { "Cache-Control": "public, max-age=604800, s-maxage=604800" }
+          headers: { "Cache-Control": "no-store, max-age=0, must-revalidate" }
         });
       }
     }
@@ -220,14 +229,54 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ urls: [] });
     }
 
-    const urls = await fetchFandomAvatars(manga.title);
+    const cleanTitle = cleanMangaTitleForSearch(manga.title);
+    let target = null;
+    
+    // 1. Direct Slug Guessing
+    const directSlugs = [
+      mangaId,
+      mangaId.replace(/-manga$/i, "").replace(/-manhwa$/i, "").replace(/-webtoon$/i, "")
+    ];
+    
+    for (const slug of directSlugs) {
+      const directUrl = `https://${slug}.fandom.com/api.php?action=query&meta=siteinfo&format=json`;
+      try {
+        const response = await fetch(directUrl, {
+          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" }
+        });
+        if (response.ok) {
+          target = { subdomain: slug, pageTitle: "Characters" };
+          break;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    
+    // 2. DuckDuckGo HTML search fallback
+    if (!target) {
+      const query = `"${cleanTitle}" fandom wiki characters`;
+      try {
+        const searchResults = await executeSearch(query);
+        const wikiResult = searchResults.find(res => res.u && res.u.includes("fandom.com/wiki/"));
+        if (wikiResult) {
+          target = extractSubdomainAndTitle(wikiResult.u);
+        }
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    let urls = null;
+    if (target) {
+      urls = await fetchFandomAvatars(target.subdomain, target.pageTitle);
+    }
     const resultUrls = urls && urls.length > 0 ? urls : [manga.cover];
 
-    // Cache in serverless memory
-    runtimeCache.set(mangaId, resultUrls);
+
 
     return NextResponse.json({ urls: resultUrls }, {
-      headers: { "Cache-Control": "public, max-age=86400, s-maxage=86400" }
+      headers: { "Cache-Control": "no-store, max-age=0, must-revalidate" }
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

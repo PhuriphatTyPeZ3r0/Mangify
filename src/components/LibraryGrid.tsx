@@ -31,11 +31,11 @@ export const LibraryGrid: React.FC<LibraryGridProps> = ({
       {/* Dynamic Section Header Title */}
       <h2 className="prompt-semibold text-xl mb-6 flex items-center justify-between w-full">
         <div className="flex items-center gap-2">
-          {activeTab === "originals" && <span className="material-symbols-outlined text-[20px] opacity-70">auto_awesome</span>}
+          {activeTab === "originals" && <span className="material-symbols-outlined text-[20px] text-accent fill">star</span>}
           {activeTab === "genres" && <span className="material-symbols-outlined text-[20px] opacity-70">filter_list</span>}
           {activeTab === "ranking" && <span className="material-symbols-outlined text-[20px] opacity-70">trending_up</span>}
           {activeTab === "bookmarks" && <span className="material-symbols-outlined text-[20px] opacity-70">bookmark</span>}
-          {activeTab === "originals" && "มังงะแนะนำสำหรับคุณ"}
+          {activeTab === "originals" && "แนะนำสำหรับคุณ"}
           {activeTab === "genres" && `หมวดหมู่${selectedGenre ? `: ${selectedGenre}` : "ทั้งหมด"}`}
           {activeTab === "ranking" && "การจัดอันดับมังงะสุดฮิต"}
           {activeTab === "bookmarks" && "บุ๊กมาร์กของฉัน"}
