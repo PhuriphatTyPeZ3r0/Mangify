@@ -1,7 +1,7 @@
 # 📋 Session Work Log — 2026-06-21
 
 > **Session Date:** 2026-06-21
-> **Focus:** Database migration, Scraper optimization, Data repair, Age-gate security, OTP refactoring, Genre Auto-translation, Log-Based Metrics, Popularity Score Ranking, Scheduled Ingestion Pipeline
+> **Focus:** Database migration, Scraper optimization, Data repair, Age-gate security, OTP refactoring, Genre Auto-translation, Log-Based Metrics, Popularity Score Ranking, Scheduled Ingestion Pipeline, Production Deployment Preparation
 
 ---
 
@@ -65,6 +65,11 @@
 ### 10. Scheduled Ingestion Pipeline Update
 - [x] ปรับปรุงไฟล์เวิร์กโฟลว์ของ GitHub Actions (`.github/workflows/ingest.yml`) สำหรับกระบวนการตั้งเวลาดึงข้อมูลใหม่ (Scheduled Manga Ingestion) โดยนำสคริปต์สแครปเปอร์มังงะผู้ใหญ่ 18+ (`scripts/scrape-doujin-lc.js`) เข้าร่วมกระบวนการรันอัตโนมัติร่วมกันในทุกๆ 6 ชั่วโมง พร้อมทั้งกำหนดคีย์ `continue-on-error: true` ในการสแครปของแต่ละแหล่งเพื่อรักษาความต่อเนื่องการดึงข้อมูลของระบบ
 
+### 11. Production Deployment Preparation (Git Flow)
+- [x] ทำการรันและตรวจสอบการสร้าง Bundle หน้าบ้านผ่าน `npm run build` ตรวจสอบความสมบูรณ์สำเร็จ 100%
+- [x] ทำการ Stage และ Commit โค้ดที่มีการเปลี่ยนแปลงทั้งหมดบน branch `dev` และสั่ง Push ขึ้น GitHub (`origin/dev`)
+- [x] สลับสาขาการทำงานไปยัง branch `master` เพื่อรวบรวมโค้ดใหม่ (Merge `dev` into `master`) และ Push ขึ้นสู่ branch หลักในการ Deploy ของระบบจริง (`origin/master`) เรียบร้อยสมบูรณ์ พร้อมตรวจสอบความพร้อมการจัดส่ง
+
 ---
 
 ## 📝 Key Decisions Made
@@ -75,6 +80,7 @@
 4. **Log-Based Source of Truth:** เปลี่ยนผ่านระบบชี้วัด (Metrics Source) ของแคตตาล็อกมาใช้ประวัติของตาราง `activity_logs` เสมือนเป็น Transaction log เพื่อรับทราบกิจกรรมที่เกิดขึ้นจริงของผู้ใช้และคำนวณย้อนกลับเป็นสถานะแบบ Real-time
 5. **Database-Driven Popularity Formula:** ปรับเกลี่ยสัดส่วนสมการโดยให้คะแนนความนิยมมีสิทธิ์ในการใช้งานจริงในระบบ (Database interaction) คลุมสิทธิ์ Static score ทั้งหมด ซึ่งทำให้ตารางจัดอันดับ (Ranking Tab) ถูกกำหนดทิศทางด้วยผู้เข้าชมจริงในเว็บไซต์ Mangify
 6. **Robust Sequential Scraper Actions:** จัดวางการรันสแครปเปอร์เรียงลำดับต่อเนื่องใน GitHub Actions workflow เดียวกันเพื่อให้ทรัพยากรการคำนวณมีประสิทธิภาพสูงสุด และลดผลกระทบของการทำงานล้มเหลวของตัวใดตัวหนึ่งด้วยตัวเลือกละเว้นข้อผิดพลาด
+7. **Clean Staging Flow:** นำส่งโค้ดผ่านสาขา `dev` ก่อนการ Merge เข้าสู่ `master` เพื่อความเสถียรและความปลอดภัยก่อนที่ Vercel Production Build จะทริกเกอร์ตามระบบ CI/CD
 
 ---
 
