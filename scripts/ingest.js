@@ -248,7 +248,8 @@ async function main() {
           description: "Manga pages uploaded via ingestion worker.",
           genres: ["Imported"],
           popularity: 1,
-          is_original: true
+          is_original: true,
+          is_mature: process.env.IS_MATURE === "true" || process.env.IS_MATURE === "1"
         });
 
       if (mangaInsertError) {

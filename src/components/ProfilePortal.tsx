@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { OtpInput } from "./OtpInput";
 
 interface ProfilePortalProps {
   userId: string;
@@ -18,6 +19,7 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
   const [username, setUsername] = useState("");
   const [selectedAvatar, setSelectedAvatar] = useState("");
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [birthDate, setBirthDate] = useState<string>("");
   
   // Loading & UI States
   const [loading, setLoading] = useState(true);
@@ -53,6 +55,7 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
         setUsername(data.username || "");
         setSelectedAvatar(data.avatar_url || "");
         setTwoFactorEnabled(!!data.two_factor_enabled);
+        setBirthDate(data.birth_date || "");
       }
     } catch (err) {
       console.error("Failed to load profile:", err);
@@ -80,6 +83,8 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
           display_name: displayName,
           username: username,
           avatar_url: selectedAvatar,
+          birth_date: birthDate || null,
+          birth_year: birthDate ? new Date(birthDate).getFullYear() : null,
           updated_at: new Date().toISOString()
         })
         .eq("id", userId);
@@ -168,8 +173,8 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
   };
 
   // Verify Code and Update 2FA Setting in DB
-  const handleVerify2FACode = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleVerify2FACode = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setVerifyingCode(true);
     setVerificationError(null);
 
@@ -203,6 +208,13 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
       setVerifyingCode(false);
     }
   };
+
+  // Auto-submit 2FA setup verification code when all 6 digits are filled
+  useEffect(() => {
+    if (verificationCode.length === 6 && isVerifying2FA) {
+      handleVerify2FACode();
+    }
+  }, [verificationCode, isVerifying2FA]);
 
   if (loading) {
     return (
@@ -276,7 +288,7 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
         <div className="flex-1 w-full bg-surface border border-border/80 rounded-3xl p-6 sm:p-8 shadow-sm">
           <h2 className="prompt-bold text-xl mb-6 flex items-center gap-2 border-b border-border/50 pb-4">
             <span className="material-symbols-outlined text-accent text-[24px]">manage_accounts</span>
-            ตั้งค่าโปรไฟล์และบัญชีผู้ใช้งาน
+            ข้อมูลผู้ใช้งาน
           </h2>
 
           {message && (
@@ -326,25 +338,37 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
                   />
                 </div>
               </div>
-            </div>
 
-            {/* Email (Disabled) */}
-            <div className="space-y-1.5">
-              <label className="text-xs prompt-semibold opacity-40">ที่อยู่อีเมล (ไม่สามารถเปลี่ยนได้)</label>
-              <input
-                type="email"
-                disabled
-                value={userEmail}
-                className="w-full text-sm prompt-regular px-4 py-2.5 rounded-xl border border-border bg-background opacity-50 cursor-not-allowed"
-              />
+              {/* Birth Date */}
+              <div className="space-y-1.5">
+                <label className="text-xs prompt-semibold opacity-80">วัน/เดือน/ปีเกิด (Date of Birth)</label>
+                <input
+                  type="date"
+                  value={birthDate}
+                  max={new Date().toISOString().split("T")[0]}
+                  onChange={(e) => setBirthDate(e.target.value)}
+                  className="w-full text-sm prompt-regular px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:border-accent transition-colors text-foreground"
+                />
+              </div>
+
+              {/* Email (Disabled) */}
+              <div className="space-y-1.5">
+                <label className="text-xs prompt-semibold opacity-40">ที่อยู่อีเมล (ไม่สามารถเปลี่ยนได้)</label>
+                <input
+                  type="email"
+                  disabled
+                  value={userEmail}
+                  className="w-full text-sm prompt-regular px-4 py-2.5 rounded-xl border border-border bg-background opacity-50 cursor-not-allowed"
+                />
+              </div>
             </div>
 
             {/* Footer Buttons */}
-            <div className="flex items-center justify-between border-t border-border/50 pt-6 mt-8">
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-between gap-3 border-t border-border/50 pt-6 mt-8">
               <button
                 type="button"
                 onClick={onLogout}
-                className="px-5 py-2.5 rounded-xl text-xs prompt-bold bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
+                className="w-full sm:w-auto justify-center px-4 sm:px-5 py-2.5 rounded-xl text-xs prompt-bold bg-destructive/10 text-destructive hover:bg-destructive hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">logout</span>
                 ออกจากระบบสมาชิก
@@ -353,7 +377,7 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
               <button
                 type="submit"
                 disabled={saving}
-                className="px-6 py-2.5 rounded-xl text-xs prompt-bold bg-accent text-white hover:bg-accent/90 disabled:opacity-50 transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-accent/20"
+                className="w-full sm:w-auto justify-center px-4 sm:px-6 py-2.5 rounded-xl text-xs prompt-bold bg-accent text-white hover:bg-accent/90 disabled:opacity-50 transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-accent/20"
               >
                 {saving ? (
                   <>
@@ -394,16 +418,10 @@ export const ProfilePortal: React.FC<ProfilePortalProps> = ({
 
             <form onSubmit={handleVerify2FACode} className="space-y-4">
               <div className="space-y-1.5">
-                <input
-                  type="text"
-                  required
-                  maxLength={6}
-                  pattern="\d{6}"
-                  title="รหัสตัวเลข 6 หลัก"
-                  placeholder="123456"
+                <OtpInput 
                   value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ""))}
-                  className="w-full text-center tracking-[10px] font-bold text-xl prompt-bold px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:border-accent transition-colors"
+                  onChange={setVerificationCode}
+                  disabled={verifyingCode}
                 />
               </div>
 

@@ -11,6 +11,8 @@ interface AuthModalProps {
   onPasswordChange: (password: string) => void;
   confirmPassword?: string;
   onConfirmPasswordChange?: (confirmPassword: string) => void;
+  birthDate?: string;
+  onBirthDateChange?: (date: string) => void;
   loading: boolean;
   error: string | null;
   onSubmit: (e: React.FormEvent) => void;
@@ -27,6 +29,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onPasswordChange,
   confirmPassword = "",
   onConfirmPasswordChange,
+  birthDate = new Date(new Date().getFullYear() - 18, 0, 1).toISOString().split("T")[0],
+  onBirthDateChange,
   loading,
   error,
   onSubmit,
@@ -144,6 +148,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     value={confirmPassword}
                     onChange={(e) => onConfirmPasswordChange?.(e.target.value)}
                     className="w-full text-sm prompt-regular px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:border-accent transition-colors"
+                  />
+                </div>
+              )}
+
+              {/* Birth Date (Signup only) */}
+              {mode === "signup" && (
+                <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
+                  <label className="text-xs prompt-semibold opacity-80">วัน/เดือน/ปีเกิด (Date of Birth)</label>
+                  <input 
+                    type="date"
+                    required
+                    value={birthDate}
+                    max={new Date().toISOString().split("T")[0]}
+                    onChange={(e) => onBirthDateChange?.(e.target.value)}
+                    className="w-full text-sm prompt-regular px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:border-accent transition-colors text-foreground"
                   />
                 </div>
               )}

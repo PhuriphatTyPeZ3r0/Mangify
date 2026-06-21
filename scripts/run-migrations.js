@@ -44,7 +44,7 @@ try {
 function parseConnectionString(str) {
   try {
     // Robust regex to extract credentials, handling special characters in password
-    const regex = /^postgresql:\/\/([^:]+):([^@]+)@([^:/]+)(?::(\d+))?\/([^?#\s]+)/;
+    const regex = /^postgresql:\/\/([^:]+):(.*)@([^@:/]+)(?::(\d+))?\/([^?#\s]+)/;
     const match = str.match(regex);
     if (!match) return null;
     return {
@@ -94,9 +94,25 @@ async function runMigration() {
     // 2. Set search path to point to our schema
     await client.query(`SET search_path TO "${targetSchema}", public, auth;`);
 
+    // Check if manga table already exists in targetSchema to prevent baseline error
+    const tableCheckQuery = `
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = $1 
+        AND table_name = 'manga'
+      );
+    `;
+    const { rows } = await client.query(tableCheckQuery, [targetSchema]);
+    const mangaTableExists = rows[0].exists;
+
     // 3. Load migration SQL files (schema.sql and profiles_2fa_migration.sql)
     const supabaseDir = path.join(__dirname, "../supabase");
-    const files = ["schema.sql", "profiles_2fa_migration.sql"];
+    let files = ["schema.sql", "profiles_2fa_migration.sql", "profiles_preferences_migration.sql", "add_mature_content_and_birth_year.sql", "add_birth_date.sql"];
+
+    if (mangaTableExists) {
+      console.log(`ℹ️ Table "manga" already exists in schema "${targetSchema}". Skipping baseline schema.sql migration.`);
+      files = files.filter(f => f !== "schema.sql");
+    }
 
     for (const file of files) {
       const filePath = path.join(supabaseDir, file);
@@ -133,25 +149,47 @@ async function runMigration() {
     const triggerSql = `
       CREATE OR REPLACE FUNCTION public.handle_new_user()
       RETURNS TRIGGER AS $$
+      DECLARE
+          user_birth_year INTEGER;
+          user_birth_date DATE;
       BEGIN
+          user_birth_year := (NEW.raw_user_meta_data->>'birth_year')::INTEGER;
+          user_birth_date := (NEW.raw_user_meta_data->>'birth_date')::DATE;
+
           -- Insert into public schema
-          INSERT INTO public.profiles (id) VALUES (NEW.id) ON CONFLICT DO NOTHING;
+          INSERT INTO public.profiles (id, birth_year, birth_date) 
+          VALUES (NEW.id, user_birth_year, user_birth_date) 
+          ON CONFLICT (id) DO UPDATE SET 
+              birth_year = EXCLUDED.birth_year,
+              birth_date = EXCLUDED.birth_date;
           
           -- Insert into dev schema (if exists)
           BEGIN
-              INSERT INTO dev.profiles (id) VALUES (NEW.id) ON CONFLICT DO NOTHING;
+              INSERT INTO dev.profiles (id, birth_year, birth_date) 
+              VALUES (NEW.id, user_birth_year, user_birth_date) 
+              ON CONFLICT (id) DO UPDATE SET 
+                  birth_year = EXCLUDED.birth_year,
+                  birth_date = EXCLUDED.birth_date;
           EXCEPTION WHEN OTHERS THEN NULL;
           END;
 
           -- Insert into test schema (if exists)
           BEGIN
-              INSERT INTO test.profiles (id) VALUES (NEW.id) ON CONFLICT DO NOTHING;
+              INSERT INTO test.profiles (id, birth_year, birth_date) 
+              VALUES (NEW.id, user_birth_year, user_birth_date) 
+              ON CONFLICT (id) DO UPDATE SET 
+                  birth_year = EXCLUDED.birth_year,
+                  birth_date = EXCLUDED.birth_date;
           EXCEPTION WHEN OTHERS THEN NULL;
           END;
 
           -- Insert into uat schema (if exists)
           BEGIN
-              INSERT INTO uat.profiles (id) VALUES (NEW.id) ON CONFLICT DO NOTHING;
+              INSERT INTO uat.profiles (id, birth_year, birth_date) 
+              VALUES (NEW.id, user_birth_year, user_birth_date) 
+              ON CONFLICT (id) DO UPDATE SET 
+                  birth_year = EXCLUDED.birth_year,
+                  birth_date = EXCLUDED.birth_date;
           EXCEPTION WHEN OTHERS THEN NULL;
           END;
 

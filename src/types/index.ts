@@ -20,6 +20,7 @@ export interface Manga {
   genres?: string[];
   popularity?: number;
   isOriginal?: boolean;
+  is_mature?: boolean;
   originalTitle?: string;
   artist?: string;
   status?: string;

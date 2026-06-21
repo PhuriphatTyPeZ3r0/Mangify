@@ -16,6 +16,7 @@ import { AuthModal } from "../components/AuthModal";
 import { AdminPortal } from "../components/AdminPortal";
 import { QuickResumeBanner } from "../components/QuickResumeBanner";
 import { ProfilePortal } from "../components/ProfilePortal";
+import { OtpInput } from "../components/OtpInput";
 
 export default function Home() {
   // --- Core State ---
@@ -55,6 +56,7 @@ export default function Home() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authConfirmPassword, setAuthConfirmPassword] = useState("");
+  const [authBirthDate, setAuthBirthDate] = useState<string>(new Date(new Date().getFullYear() - 18, 0, 1).toISOString().split("T")[0]);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -91,10 +93,15 @@ export default function Home() {
 
   // --- Functions (Defined before useEffect to avoid ReferenceError) ---
   
-  const fetchMangas = async () => {
+  const fetchMangas = async (token?: string) => {
     try {
       setMangaLoading(true);
-      const res = await fetch("/api/catalog");
+      const headers: HeadersInit = {};
+      const activeToken = token || session?.access_token;
+      if (activeToken) {
+        headers["Authorization"] = `Bearer ${activeToken}`;
+      }
+      const res = await fetch("/api/catalog", { headers });
       const data = await res.json();
       if (data.mangas) setMangas(data.mangas);
     } catch (err) {
@@ -104,9 +111,14 @@ export default function Home() {
     }
   };
 
-  const checkAdminStatus = async (userId: string) => {
+  const checkAdminStatus = async (userId: string, token?: string) => {
     try {
-      const res = await fetch(`/api/admin/check?userId=${userId}`);
+      const headers: HeadersInit = {};
+      const activeToken = token || session?.access_token;
+      if (activeToken) {
+        headers["Authorization"] = `Bearer ${activeToken}`;
+      }
+      const res = await fetch(`/api/admin/check?userId=${userId}`, { headers });
       const data = await res.json();
       setIsAdmin(!!data.isAdmin);
     } catch (err) {
@@ -143,11 +155,46 @@ export default function Home() {
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("display_name, username, avatar_url")
+        .select("display_name, username, avatar_url, favorite_genres, preferred_theme, birth_year, birth_date")
         .eq("id", uid)
         .single();
       if (data) {
         setUserProfile(data);
+
+        // --- 1. Sync Favorite Genres on Login ---
+        const dbGenres = data.favorite_genres && Array.isArray(data.favorite_genres) ? data.favorite_genres : [];
+        const localGenresStr = localStorage.getItem("mangify-favorite-genres");
+        const localGenres: string[] = localGenresStr ? JSON.parse(localGenresStr) : [];
+        
+        // Merge unique genres (Merge logic)
+        const mergedGenres = Array.from(new Set([...localGenres, ...dbGenres]));
+        setFavoriteGenres(mergedGenres);
+        localStorage.setItem("mangify-favorite-genres", JSON.stringify(mergedGenres));
+        
+        // If DB differs from merged, save merged back to DB
+        const dbSorted = JSON.stringify([...dbGenres].sort());
+        const mergedSorted = JSON.stringify([...mergedGenres].sort());
+        if (dbSorted !== mergedSorted) {
+          await supabase
+            .from("profiles")
+            .update({ favorite_genres: mergedGenres })
+            .eq("id", uid);
+        }
+
+        // --- 2. Sync Preferred Theme on Login ---
+        const dbTheme = data.preferred_theme || "light";
+        const localTheme = localStorage.getItem("mangify-theme") as Theme | null;
+        
+        if (localTheme && localTheme !== dbTheme) {
+          // Local theme overrides DB (Conflict resolution)
+          await supabase
+            .from("profiles")
+            .update({ preferred_theme: localTheme })
+            .eq("id", uid);
+        } else {
+          // DB theme overrides local theme or initializes it
+          applyTheme(dbTheme as Theme);
+        }
       }
     } catch (err) {
       console.error("Error fetching user profile:", err);
@@ -214,6 +261,16 @@ export default function Home() {
     localStorage.setItem("mangify-theme", theme);
     document.documentElement.className = `theme-${theme}`; // Fix: Use className on root
     document.documentElement.setAttribute("data-theme", theme);
+
+    if (session) {
+      supabase
+        .from("profiles")
+        .update({ preferred_theme: theme })
+        .eq("id", session.user.id)
+        .then(({ error }) => {
+          if (error) console.error("Failed to sync theme to DB:", error.message);
+        });
+    }
   };
 
   const handleTabChange = (tab: string) => {
@@ -265,7 +322,11 @@ export default function Home() {
 
     if (chapter && (!chapter.pages || chapter.pages.length === 0)) {
       try {
-        const res = await fetch(`/api/chapters?id=${chapterId}`);
+        const headers: HeadersInit = {};
+        if (session?.access_token) {
+          headers["Authorization"] = `Bearer ${session.access_token}`;
+        }
+        const res = await fetch(`/api/chapters?id=${chapterId}`, { headers });
         const data = await res.json();
         if (data.pages) {
           chapter.pages = data.pages;
@@ -411,7 +472,16 @@ export default function Home() {
         if (authPassword !== authConfirmPassword) {
           throw new Error("รหัสผ่านและการยืนยันรหัสผ่านไม่ตรงกัน");
         }
-        const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+        const { error } = await supabase.auth.signUp({ 
+          email: authEmail, 
+          password: authPassword,
+          options: {
+            data: {
+              birth_year: new Date(authBirthDate).getFullYear(),
+              birth_date: authBirthDate
+            }
+          }
+        });
         if (error) throw error;
         setAuthPassword("");
         setAuthConfirmPassword("");
@@ -453,8 +523,8 @@ export default function Home() {
     }
   };
 
-  const handleVerify2FALoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleVerify2FALoginSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setTwoFactorLoading(true);
     setTwoFactorError(null);
 
@@ -488,6 +558,13 @@ export default function Home() {
       setTwoFactorLoading(false);
     }
   };
+
+  // Auto-submit login 2FA code when all 6 digits are filled
+  useEffect(() => {
+    if (twoFactorCode.length === 6 && is2FAChallengeOpen) {
+      handleVerify2FALoginSubmit();
+    }
+  }, [twoFactorCode, is2FAChallengeOpen]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -537,11 +614,14 @@ export default function Home() {
 
   // --- Real Ranking Analysis & Recommendation Helper Functions ---
   const getMangaScore = (m: Manga) => {
-    const hasRealInteractions = (m.realViews || 0) > 0 || (m.realBookmarks || 0) > 0;
-    if (hasRealInteractions) {
-      return (m.realViews || 0) * 0.7 + (m.realBookmarks || 0) * 0.3;
-    }
-    return (m.numericViews || 0) * 0.7 + (m.popularity || 0) * 0.3;
+    // Primary score: actual database views and bookmarks
+    const realScore = (m.realViews || 0) * 0.7 + (m.realBookmarks || 0) * 0.3;
+    
+    // Secondary score (fallback/tie-breaker): static/scraped stats scaled down so that
+    // even a single real view or bookmark outranks all static stats.
+    const staticScore = ((m.numericViews || 0) * 0.7 + (m.popularity || 0) * 0.3) / 100000000;
+    
+    return realScore + staticScore;
   };
 
   const getRecommendedMangas = () => {
@@ -585,6 +665,16 @@ export default function Home() {
     localStorage.setItem("mangify-favorite-genres", JSON.stringify(selected));
     localStorage.removeItem("mangify-favorite-genres-skipped");
     setIsGenreModalOpen(false);
+
+    if (session) {
+      supabase
+        .from("profiles")
+        .update({ favorite_genres: selected })
+        .eq("id", session.user.id)
+        .then(({ error }) => {
+          if (error) console.error("Failed to sync favorite genres to DB:", error.message);
+        });
+    }
   };
 
   const handleSkipGenres = () => {
@@ -651,9 +741,6 @@ export default function Home() {
 
   // --- Effects ---
   useEffect(() => {
-    // Initial data load from Supabase
-    fetchMangas();
-    
     // Load or generate anonymous ID
     let anonId = localStorage.getItem("mangify-user-id");
     if (!anonId) {
@@ -668,11 +755,13 @@ export default function Home() {
       setSession(session);
       if (session) {
         setUserId(session.user.id);
-        checkAdminStatus(session.user.id);
+        checkAdminStatus(session.user.id, session.access_token);
         fetchUserProfile(session.user.id);
+        fetchMangas(session.access_token);
         await fetchUserData(session.user.id, session.access_token);
       } else {
         setUserProfile(null);
+        fetchMangas();
         await fetchUserData(anonId, null);
       }
     });
@@ -681,8 +770,9 @@ export default function Home() {
       setSession(session);
       if (session) {
         setUserId(session.user.id);
-        checkAdminStatus(session.user.id);
+        checkAdminStatus(session.user.id, session.access_token);
         fetchUserProfile(session.user.id);
+        fetchMangas(session.access_token);
         
         if (event === "SIGNED_IN") {
           await syncAnonymousDataToUser(session.user.id, session.access_token);
@@ -706,6 +796,7 @@ export default function Home() {
         setIsAdmin(false);
         setUserId(anonId);
         setUserProfile(null);
+        fetchMangas();
         await fetchUserData(anonId, null);
         
         if (event === "SIGNED_OUT") {
@@ -824,7 +915,10 @@ export default function Home() {
             userId={userId}
             userEmail={session?.user?.email || ""}
             onLogout={handleLogout}
-            onProfileUpdate={() => fetchUserProfile(userId)}
+            onProfileUpdate={async () => {
+              fetchUserProfile(userId);
+              fetchMangas(session?.access_token);
+            }}
           />
         ) : (
           <>
@@ -927,8 +1021,14 @@ export default function Home() {
                           className="group border border-border/60 bg-surface rounded-xl p-4 flex gap-4 hover:border-accent hover:shadow-md transition-all duration-300 cursor-pointer"
                         >
                           {/* Manga Cover */}
-                          <div className="w-16 h-22 rounded-lg overflow-hidden flex-shrink-0 border border-border/20 shadow-sm relative">
-                            <img src={manga.cover} alt={manga.title} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                          <div className="w-16 h-22 rounded-lg overflow-hidden flex-shrink-0 border border-border/20 shadow-sm relative bg-neutral-900">
+                            {manga.cover ? (
+                              <img src={manga.cover} alt={manga.title} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-neutral-400">
+                                <span className="material-symbols-outlined text-[18px] opacity-40">image</span>
+                              </div>
+                            )}
                           </div>
                           
                           {/* Manga Info & Progress */}
@@ -1214,6 +1314,9 @@ export default function Home() {
           bookmarks={bookmarks}
           onLaunchReader={handleLaunchReader}
           onToggleBookmark={handleToggleBookmark}
+          userProfile={userProfile}
+          session={session}
+          isAdmin={isAdmin}
         />
       )}
 
@@ -1246,6 +1349,7 @@ export default function Home() {
             setAuthError(null);
             setAuthPassword("");
             setAuthConfirmPassword("");
+            setAuthBirthDate(new Date(new Date().getFullYear() - 18, 0, 1).toISOString().split("T")[0]);
           }}
           email={authEmail}
           onEmailChange={setAuthEmail}
@@ -1253,6 +1357,8 @@ export default function Home() {
           onPasswordChange={setAuthPassword}
           confirmPassword={authConfirmPassword}
           onConfirmPasswordChange={setAuthConfirmPassword}
+          birthDate={authBirthDate}
+          onBirthDateChange={setAuthBirthDate}
           loading={authLoading}
           error={authError}
           onSubmit={handleAuthSubmit}
@@ -1281,15 +1387,10 @@ export default function Home() {
 
             <form onSubmit={handleVerify2FALoginSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <input 
-                  type="text"
-                  required
-                  maxLength={6}
-                  pattern="\d{6}"
-                  placeholder="123456"
+                <OtpInput 
                   value={twoFactorCode}
-                  onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ""))}
-                  className="w-full text-center tracking-[10px] font-bold text-xl prompt-bold px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:border-accent transition-colors"
+                  onChange={setTwoFactorCode}
+                  disabled={twoFactorLoading}
                 />
               </div>
 
@@ -1332,12 +1433,9 @@ export default function Home() {
             <div className="flex justify-between items-start mb-6">
               <div>
                 <h3 className="prompt-bold text-xl md:text-2xl text-foreground flex items-center gap-2">
-                  <span className="material-symbols-outlined text-accent text-[28px]">auto_awesome</span>
-                  เลือกหมวดหมู่ที่คุณชื่นชอบ
+                  <span className="material-symbols-outlined">filter_list</span>
+                  เลือกหมวดหมู่
                 </h3>
-                <p className="prompt-light text-xs opacity-70 mt-1">
-                  เลือกหมวดหมู่มังงะที่คุณสนใจอย่างน้อย 1-3 หมวดหมู่ เพื่อให้เราสามารถแนะนำเรื่องที่ใช่สำหรับคุณได้ดียิ่งขึ้น
-                </p>
               </div>
               <button 
                 onClick={handleSkipGenres}
@@ -1359,15 +1457,15 @@ export default function Home() {
                         prev.includes(genre) ? prev.filter(g => g !== genre) : [...prev, genre]
                       );
                     }}
-                    className={`px-4 py-3 rounded-xl text-xs prompt-semibold border transition-all flex items-center justify-between cursor-pointer ${
+                    className={`px-2.5 sm:px-4 py-2.5 sm:py-3 rounded-xl text-[10px] sm:text-xs prompt-semibold border transition-all flex items-center justify-between cursor-pointer min-w-0 ${
                       isSelected 
                         ? "bg-accent/10 border-accent text-accent shadow-sm" 
                         : "bg-surface border-border/60 text-foreground opacity-75 hover:opacity-100 hover:border-border"
                     }`}
                   >
-                    <span>{genre}</span>
+                    <span className="truncate pr-1" title={genre}>{genre}</span>
                     {isSelected && (
-                      <span className="material-symbols-outlined text-[14px] text-accent fill animate-in zoom-in duration-200">check_circle</span>
+                      <span className="material-symbols-outlined text-[14px] text-accent fill animate-in zoom-in duration-200 flex-shrink-0">check_circle</span>
                     )}
                   </button>
                 );

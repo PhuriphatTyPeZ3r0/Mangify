@@ -40,40 +40,7 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const translationMap = {
-  "Action": "ศิลปะการต่อสู้-แอคชั่น",
-  "Adventure": "ผจญภัย",
-  "Comedy": "ตลก",
-  "Drama": "ดราม่า",
-  "Fantasy": "แฟนตาซี",
-  "Harem": "ฮาเร็ม",
-  "Historical": "ย้อนยุค",
-  "Martial Arts": "ศิลปะการต่อสู้-แอคชั่น",
-  "Mystery": "ลึกลับ",
-  "Psychological": "จิตวิทยา",
-  "Romance": "โรแมนติก",
-  "School Life": "ชีวิตในโรงเรียน",
-  "Sci-fi": "ไซไฟ",
-  "Seinen": "เซเน็น",
-  "Shounen": "โชเน็น",
-  "Slice of Life": "ชีวิตประจำวัน",
-  "Supernatural": "เหนือธรรมชาติ",
-  "Tragedy": "โศกนาฏกรรม",
-  "ภัยภิบัติ": "ภัยพิบัติ",
-};
-
-const ignoredTags = new Set(["Webtoon", "Kakao"]);
-
-function cleanGenres(genres) {
-  if (!genres || !Array.isArray(genres)) return [];
-  const mapped = genres
-    .map(g => {
-      const trimmed = g.trim();
-      return translationMap[trimmed] || trimmed;
-    })
-    .filter(g => !ignoredTags.has(g) && g !== "");
-  return Array.from(new Set(mapped));
-}
+const { cleanGenres, cleanGenresAsync } = require("../src/lib/genreUtils");
 
 async function main() {
   console.log("Fetching all manga records...");
@@ -87,7 +54,7 @@ async function main() {
   
   let updatedCount = 0;
   for (const manga of mangas) {
-    const cleaned = cleanGenres(manga.genres);
+    const cleaned = await cleanGenresAsync(manga.genres);
     // Only update if the list of genres changed
     const originalSorted = JSON.stringify([...(manga.genres || [])].sort());
     const cleanedSorted = JSON.stringify([...cleaned].sort());

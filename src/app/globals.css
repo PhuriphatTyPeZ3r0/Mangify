@@ -248,3 +248,10 @@ body {
   font-variation-settings: 'FILL' 1;
 }
 
+/* OLED Theme Accessibility & Contrast: Since --accent is white/light-gray in OLED, make text/icons on bg-accent black */
+.theme-oled .bg-accent,
+.theme-oled .bg-accent * {
+  color: #000000 !important;
+}
+
+

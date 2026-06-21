@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { createClient } = require("@supabase/supabase-js");
 const { Resend } = require("resend");
+const { cleanGenresAsync } = require("../src/lib/genreUtils");
 
 // --- Config & Auth ---
 const envPath = path.join(__dirname, "../.env.local");
@@ -61,41 +62,6 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
 });
 
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
-
-const translationMap = {
-  "Action": "ศิลปะการต่อสู้-แอคชั่น",
-  "Adventure": "ผจญภัย",
-  "Comedy": "ตลก",
-  "Drama": "ดราม่า",
-  "Fantasy": "แฟนตาซี",
-  "Harem": "ฮาเร็ม",
-  "Historical": "ย้อนยุค",
-  "Martial Arts": "ศิลปะการต่อสู้-แอคชั่น",
-  "Mystery": "ลึกลับ",
-  "Psychological": "จิตวิทยา",
-  "Romance": "โรแมนติก",
-  "School Life": "ชีวิตในโรงเรียน",
-  "Sci-fi": "ไซไฟ",
-  "Seinen": "เซเน็น",
-  "Shounen": "โชเน็น",
-  "Slice of Life": "ชีวิตประจำวัน",
-  "Supernatural": "เหนือธรรมชาติ",
-  "Tragedy": "โศกนาฏกรรม",
-  "ภัยภิบัติ": "ภัยพิบัติ",
-};
-
-const ignoredTags = new Set(["Webtoon", "Kakao"]);
-
-function cleanGenres(genres) {
-  if (!genres || !Array.isArray(genres)) return [];
-  const mapped = genres
-    .map(g => {
-      const trimmed = g.trim();
-      return translationMap[trimmed] || trimmed;
-    })
-    .filter(g => !ignoredTags.has(g) && g !== "");
-  return Array.from(new Set(mapped));
-}
 
 function getStandardizedChapterId(mangaId, chapterUrlOrSegment, title) {
   const decoded = decodeURIComponent(chapterUrlOrSegment);
@@ -335,7 +301,7 @@ async function scrape() {
           author: mangaData.author || null,
           cover: mangaData.cover || null,
           description: mangaData.description || null,
-          genres: cleanGenres(mangaData.genres || []),
+          genres: await cleanGenresAsync(mangaData.genres || []),
           is_original: true,
           popularity: popularityScore,
           original_title: mangaData.originalTitle || null,
@@ -343,7 +309,8 @@ async function scrape() {
           status: mangaData.status || 'Ongoing',
           manga_type: mangaData.type || 'Manhwa',
           release_year: mangaData.releaseYear || null,
-          views_count: mangaData.viewsCount || '0'
+          views_count: mangaData.viewsCount || '0',
+          is_mature: mangaData.genres?.some(g => g.toLowerCase().includes("18+") || g.toLowerCase().includes("mature") || g.toLowerCase().includes("hmanhwa") || g.toLowerCase().includes("h-manhwa") || g.toLowerCase().includes("โดจินเกาหลี")) || false
         });
 
         const chaptersToSync = mangaData.chapters.reverse();

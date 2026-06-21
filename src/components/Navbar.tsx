@@ -216,10 +216,10 @@ export const Navbar: React.FC<NavbarProps> = ({
       )}
 
       {/* Mobile Slide-in Drawer Menu */}
-      <div className={`fixed top-0 right-0 h-full w-[280px] bg-background border-l border-border z-[999] p-6 shadow-xl flex flex-col justify-between transition-transform duration-300 md:hidden ${
+      <div className={`fixed top-0 right-0 h-full w-[280px] bg-background border-l border-border z-[999] shadow-xl flex flex-col transition-transform duration-300 md:hidden overflow-hidden ${
         isMobileMenuOpen ? "translate-x-0" : "translate-x-full"
       }`}>
-        <div className="flex-1 flex flex-col justify-between h-full overflow-y-auto">
+        <div className="flex-1 flex flex-col justify-between overflow-y-auto p-6">
           <div>
             {/* Drawer Header */}
             <div className="flex justify-between items-center mb-10">

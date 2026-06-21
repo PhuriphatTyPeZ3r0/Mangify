@@ -31,13 +31,13 @@ export const LibraryGrid: React.FC<LibraryGridProps> = ({
       {/* Dynamic Section Header Title */}
       <h2 className="prompt-semibold text-xl mb-6 flex items-center justify-between w-full">
         <div className="flex items-center gap-2">
-          {activeTab === "originals" && <span className="material-symbols-outlined text-[20px] text-accent fill">star</span>}
+          {activeTab === "originals" && <span className="material-symbols-outlined text-[20px] text-accent fill">award_star</span>}
           {activeTab === "genres" && <span className="material-symbols-outlined text-[20px] opacity-70">filter_list</span>}
           {activeTab === "ranking" && <span className="material-symbols-outlined text-[20px] opacity-70">trending_up</span>}
           {activeTab === "bookmarks" && <span className="material-symbols-outlined text-[20px] opacity-70">bookmark</span>}
           {activeTab === "originals" && "แนะนำสำหรับคุณ"}
           {activeTab === "genres" && `หมวดหมู่${selectedGenre ? `: ${selectedGenre}` : "ทั้งหมด"}`}
-          {activeTab === "ranking" && "การจัดอันดับมังงะสุดฮิต"}
+          {activeTab === "ranking" && "อันดับยอดฮิต"}
           {activeTab === "bookmarks" && "บุ๊กมาร์กของฉัน"}
         </div>
         {headerExtra}
@@ -55,19 +55,26 @@ export const LibraryGrid: React.FC<LibraryGridProps> = ({
               <div className="relative w-full aspect-[2/3] rounded-lg overflow-hidden bg-surface shadow-sm transition-all duration-300 group-hover:-translate-y-2 group-hover:shadow-lg border border-border/20">
                 {/* Skeleton Loader Backdrop */}
                 <div className="absolute inset-0 skeleton z-0" />
-                <img 
-                  src={manga.cover} 
-                  alt={`${manga.title} Cover`}
-                  className="relative w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 z-10"
-                  loading="lazy"
-                  onLoad={(e) => {
-                    (e.target as HTMLImageElement).classList.add("opacity-100");
-                  }}
-                />
+                {manga.cover ? (
+                  <img 
+                    src={manga.cover} 
+                    alt={`${manga.title} Cover`}
+                    className="relative w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 z-10"
+                    loading="lazy"
+                    onLoad={(e) => {
+                      (e.target as HTMLImageElement).classList.add("opacity-100");
+                    }}
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-neutral-900 text-neutral-400 z-10 p-4 text-center">
+                    <span className="material-symbols-outlined text-[32px] opacity-40 mb-1">image</span>
+                    <span className="text-[10px] prompt-light opacity-60">ไม่มีภาพปก</span>
+                  </div>
+                )}
                 {/* Bookmark Button */}
                 <button
                   onClick={(e) => onToggleBookmark(e, manga.id)}
-                  className="absolute top-2 right-2 p-1.5 rounded-full bg-background/80 backdrop-blur-md border border-border text-foreground hover:text-accent hover:scale-110 transition-all z-20 shadow-sm cursor-pointer"
+                  className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-md border border-border text-foreground hover:text-accent hover:scale-110 transition-all z-20 shadow-sm cursor-pointer"
                   title={bookmarks.includes(manga.id) ? "ยกเลิกบุ๊กมาร์ก" : "บันทึกบุ๊กมาร์ก"}
                 >
                   <span className={`material-symbols-outlined text-[14px] ${bookmarks.includes(manga.id) ? "fill text-accent" : "opacity-70"}`}>

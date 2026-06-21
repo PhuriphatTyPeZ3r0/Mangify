@@ -79,7 +79,8 @@ export function useAuth() {
    * Returns the resulting session on success (for bookmark sync), or null on failure.
    */
   const handleAuth = async (
-    e: React.FormEvent
+    e: React.FormEvent,
+    birthYear?: number
   ): Promise<any | null> => {
     e.preventDefault();
     setAuthLoading(true);
@@ -99,6 +100,11 @@ export function useAuth() {
         const { data, error } = await supabase.auth.signUp({
           email: authEmail,
           password: authPassword,
+          options: {
+            data: {
+              birth_year: birthYear
+            }
+          }
         });
         if (error) throw error;
         resultSession = data.session;
