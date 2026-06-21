@@ -1003,7 +1003,7 @@ export default function Home() {
                       className="text-xs prompt-medium text-destructive hover:underline flex items-center gap-1 cursor-pointer"
                     >
                       <span className="material-symbols-outlined text-[14px]">delete</span>
-                      ล้างประวัติทั้งหมด
+                      <span className="hidden sm:inline">ล้างประวัติทั้งหมด</span>
                     </button>
                   )}
                 </div>
