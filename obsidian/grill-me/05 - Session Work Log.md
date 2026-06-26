@@ -1,7 +1,7 @@
 # 📋 Session Work Log — 2026-06-21
 
 > **Session Date:** 2026-06-21
-> **Focus:** Database migration, Scraper optimization, Data repair, Age-gate security, OTP refactoring, Genre Auto-translation, Log-Based Metrics, Popularity Score Ranking, Scheduled Ingestion Pipeline, Production Deployment Preparation
+> **Focus:** Database migration, Scraper optimization, Data repair, Age-gate security, OTP refactoring, Genre Auto-translation, Log-Based Metrics, Popularity Score Ranking, Scheduled Ingestion Pipeline, Production Deployment Preparation, UI Layout Optimization
 
 ---
 
@@ -49,11 +49,12 @@
 - [x] พัฒนาระบบ `cleanGenresAsync` ใน `src/lib/genreUtils.js` ที่ผสานการล้าง prefix คำฟุ่มเฟือย และเชื่อมต่อกับ Google Translate API (Free endpoint) แปลหมวดหมู่จากภาษาอังกฤษเป็นภาษาไทยทันทีหากพบหมวดหมู่ใหม่ที่ไม่อยู่ใน Dictionary เดิม
 - [x] อัปเกรดสคริปต์สแครปเปอร์ทั้งสองตัว (`scrape-doujin-lc.js`, `scrape-up-manga.js`) และสคริปต์ล้างฐานข้อมูล (`clean-db-genres.js`) ให้เปลี่ยนมาใช้ `cleanGenresAsync` เพื่อจัดการข้อมูลหมวดหมู่ทั้งหมด
 
-### 8. UI Bug Fixes
+### 8. UI Bug Fixes & Layout Optimization
 - [x] แก้ Console Error: "empty string passed to src attribute"
   - `LibraryGrid.tsx` — เพิ่ม null check ก่อน render `<img>`
   - `page.tsx` — เพิ่ม placeholder fallback
   - `MangaInfoModal.tsx` — เพิ่ม null check
+- [x] ปรับลดการแสดงผลปุ่ม "ล้างประวัติทั้งหมด" บนหน้าแสดงรายการประวัติอ่านล่าสุด โดยซ่อนส่วนข้อความตัวอักษรและคงเหลือไว้เฉพาะไอคอนถังขยะสีแดงเมื่อแสดงผลบนหน้าจอโทรศัพท์มือถือ/สมาร์ทโฟนขนาดเล็ก (`hidden sm:inline`) เพื่อรักษาความเป็นระเบียบและป้องกันปัญหาปุ่มล้นเบียดองค์ประกอบอื่น
 
 ### 9. Log-Based Metrics (Views & Bookmarks)
 - [x] เปลี่ยนการดึงข้อมูลสถิติผู้เข้าชม (`realViews`) และจำนวนการบันทึก (`realBookmarks`) ของแคตตาล็อก API (`/api/catalog`) โดยคำนวณและประมวลผลจากข้อมูลดิบในตาราง `activity_logs` แทนตารางบันทึกสถานะเดิม:
@@ -81,6 +82,7 @@
 5. **Database-Driven Popularity Formula:** ปรับเกลี่ยสัดส่วนสมการโดยให้คะแนนความนิยมมีสิทธิ์ในการใช้งานจริงในระบบ (Database interaction) คลุมสิทธิ์ Static score ทั้งหมด ซึ่งทำให้ตารางจัดอันดับ (Ranking Tab) ถูกกำหนดทิศทางด้วยผู้เข้าชมจริงในเว็บไซต์ Mangify
 6. **Robust Sequential Scraper Actions:** จัดวางการรันสแครปเปอร์เรียงลำดับต่อเนื่องใน GitHub Actions workflow เดียวกันเพื่อให้ทรัพยากรการคำนวณมีประสิทธิภาพสูงสุด และลดผลกระทบของการทำงานล้มเหลวของตัวใดตัวหนึ่งด้วยตัวเลือกละเว้นข้อผิดพลาด
 7. **Clean Staging Flow:** นำส่งโค้ดผ่านสาขา `dev` ก่อนการ Merge เข้าสู่ `master` เพื่อความเสถียรและความปลอดภัยก่อนที่ Vercel Production Build จะทริกเกอร์ตามระบบ CI/CD
+8. **Responsive UI Optimization:** การสลับรูปแบบปุ่มลบประวัติบนมือถือให้เหลือเพียงไอคอนช่วยแก้ปัญหา UI เบียดเสียดบนหน้าจอขนาดเล็กและประหยัดพื้นที่แสดงผลได้อย่างมาก
 
 ---
 
